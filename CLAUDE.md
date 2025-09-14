@@ -156,7 +156,7 @@ display.start_display()
 - `opencv-python>=4.8.0` - Computer vision algorithms
 - `scipy>=1.10.0` - Scientific computing (advanced features)
 - `scikit-learn>=1.3.0` - Machine learning utilities
-- `open3d>=0.17.0` - 3D data processing
+- `open3d>=0.13.0` - 3D data processing (optional - for advanced AR features)
 
 ### Graceful Degradation
 The system detects missing optional dependencies and disables advanced features while maintaining core functionality.

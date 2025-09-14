@@ -1,0 +1,26 @@
+# Core WebRTC Surgical Platform Requirements
+# Compatible with Python 3.11+
+
+# Essential for WebRTC Platform
+numpy>=1.24.0,<2.0
+opencv-python>=4.8.0
+websockets>=11.0.0
+requests>=2.31.0
+
+# Optional AR and Computer Vision (install if needed)
+# scipy>=1.10.0
+# scikit-learn>=1.3.0
+# scikit-image>=0.21.0
+# open3d>=0.13.0  # Use older version for compatibility
+
+# Core utilities
+python-dotenv>=1.0.0
+pillow>=10.0.0
+
+# Development and testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Async support
+asyncio-throttle>=1.0.0
+aiohttp>=3.8.5
