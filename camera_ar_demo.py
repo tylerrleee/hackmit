@@ -11,10 +11,20 @@ import numpy as np
 import time
 import sys
 import os
-import logging
+import json
+import threading
+import argparse
 from ar_core import CoreARProcessor, create_medical_ar_system, create_enhanced_medical_ar_system
-from threaded_camera import ThreadedCameraCapture, ARProcessingWorker, DisplayRenderer
-from threading_utils import ThreadCoordinator, PerformanceMonitor
+
+# Handle optional WebSocket dependency gracefully
+try:
+    import websockets
+    import asyncio
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    WEBSOCKET_AVAILABLE = False
+    print("Info: WebSocket features disabled. Install websockets for WebRTC integration.")
+    print("Install with: pip install websockets")
 
 # Handle optional opencv dependency gracefully
 try:
@@ -26,14 +36,12 @@ except ImportError:
     print("Install with: pip install opencv-python")
     sys.exit(1)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 
 class CameraARSystem:
-    """Multi-threaded real-time camera integration for AR processing with interactive drawing"""
+    """Real-time camera integration for AR processing with interactive drawing"""
     
-    def __init__(self, camera_mode='single', left_camera_id=0, right_camera_id=1, use_threading=True, target_fps=30):
+    def __init__(self, camera_mode='single', left_camera_id=0, right_camera_id=1, 
+                 webrtc_enabled=False, room_id=None, bridge_url="ws://localhost:8765"):
         """
         Initialize camera AR system
         
@@ -41,24 +49,30 @@ class CameraARSystem:
             camera_mode: 'single' for single camera with stereo split, 'stereo' for two cameras
             left_camera_id: Camera ID for left camera (or main camera in single mode)
             right_camera_id: Camera ID for right camera (only used in stereo mode)
+            webrtc_enabled: Enable WebRTC integration for annotation sharing
+            room_id: WebRTC room ID for annotation sharing
+            bridge_url: WebSocket URL for WebRTC bridge connection
         """
         self.camera_mode = camera_mode
         self.left_camera_id = left_camera_id
         self.right_camera_id = right_camera_id
-        self.use_threading = use_threading
-        self.target_fps = target_fps
         
-        # Multi-threaded components
-        self.camera_capture = None
-        self.ar_processor_worker = None
-        self.display_renderer = None
-        self.coordinator = None
-        self.performance_monitor = None
+        # WebRTC integration
+        self.webrtc_enabled = webrtc_enabled and WEBSOCKET_AVAILABLE
+        self.room_id = room_id
+        self.bridge_url = bridge_url
+        self.websocket_connection = None
+        self.websocket_thread = None
+        self.websocket_loop = None
+        self.annotation_queue = []
+        self.connected_to_bridge = False
         
-        # Legacy components (for fallback)
+        # Initialize cameras
         self.left_camera = None
         self.right_camera = None
         self.single_camera = None
+        
+        # AR processor
         self.ar_processor = None
         
         # Frame dimensions
@@ -103,50 +117,17 @@ class CameraARSystem:
         self.object_anchored_drawings = {} # Drawings anchored to specific objects
         self.object_selection_radius = 30  # Pixels radius for object selection
         
-        # Enhanced object selection system
-        self.object_selection_mode = False  # Toggle for object selection mode
-        self.selected_for_highlighting = None  # Object selected for highlighting (separate from drawing)
+        print(f"Initializing camera system in {camera_mode} mode...")
         
-        threading_mode = "multi-threaded" if use_threading else "single-threaded"
-        print(f"Initializing {threading_mode} camera system in {camera_mode} mode (target FPS: {target_fps})...")
+        # Initialize WebRTC connection if enabled
+        if self.webrtc_enabled:
+            if self.room_id:
+                print(f"🌐 WebRTC integration enabled for room: {self.room_id}")
+            else:
+                print("⚠️  WebRTC enabled but no room ID specified - annotations won't be shared")
         
     def initialize_cameras(self):
-        """Initialize camera hardware with optional multi-threading"""
-        try:
-            if self.use_threading:
-                # Initialize multi-threaded camera capture
-                camera_id = self.left_camera_id  # Use left camera as primary
-                buffer_size = 15  # Larger buffer for better performance
-                
-                self.camera_capture = ThreadedCameraCapture(
-                    camera_index=camera_id,
-                    buffer_size=buffer_size,
-                    target_fps=self.target_fps
-                )
-                
-                if not self.camera_capture.start_capture():
-                    raise Exception("Failed to start threaded camera capture")
-                
-                print(f"✅ Multi-threaded camera capture initialized (Camera {camera_id})")
-                print(f"   - Buffer size: {buffer_size} frames")
-                print(f"   - Target FPS: {self.target_fps}")
-                
-                return True
-            
-            else:
-                # Legacy single-threaded initialization
-                return self._initialize_legacy_cameras()
-                
-        except Exception as e:
-            print(f"❌ Camera initialization failed: {e}")
-            if self.use_threading:
-                print("   Falling back to single-threaded mode...")
-                self.use_threading = False
-                return self._initialize_legacy_cameras()
-            return False
-    
-    def _initialize_legacy_cameras(self):
-        """Legacy single-threaded camera initialization"""
+        """Initialize camera hardware"""
         try:
             if self.camera_mode == 'stereo':
                 # Two separate cameras
@@ -162,7 +143,7 @@ class CameraARSystem:
                     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
                     camera.set(cv2.CAP_PROP_FPS, 30)
                 
-                print("✅ Legacy stereo cameras initialized")
+                print("✅ Stereo cameras initialized")
                 
             else:  # single camera mode
                 self.single_camera = cv2.VideoCapture(self.left_camera_id)
@@ -175,72 +156,22 @@ class CameraARSystem:
                 self.single_camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
                 self.single_camera.set(cv2.CAP_PROP_FPS, 30)
                 
-                print("✅ Legacy single camera initialized (stereo split mode)")
+                print("✅ Single camera initialized (stereo split mode)")
                 
             return True
             
         except Exception as e:
-            print(f"❌ Legacy camera initialization failed: {e}")
+            print(f"❌ Camera initialization failed: {e}")
             return False
     
     def initialize_ar_system(self):
-        """Initialize the AR processing system with optional multi-threading"""
-        try:
-            if self.use_threading:
-                # Initialize multi-threaded AR processing
-                self.ar_processor_worker = ARProcessingWorker(
-                    self.camera_capture, 
-                    target_fps=max(15, self.target_fps - 10)  # Slightly lower for processing
-                )
-                
-                self.ar_processor_worker.start_processing()
-                
-                # Initialize display renderer
-                self.display_renderer = DisplayRenderer(
-                    self.camera_capture, 
-                    self.ar_processor_worker
-                )
-                
-                # Set up mouse callback for drawing
-                self.display_renderer.set_mouse_callback(self.mouse_callback)
-                
-                # Set up key handlers
-                self._setup_key_handlers()
-                
-                if not self.display_renderer.initialize_display():
-                    raise Exception("Failed to initialize display renderer")
-                
-                # Get coordinator and performance monitor
-                self.coordinator = self.camera_capture.coordinator
-                self.performance_monitor = self.camera_capture.performance_monitor
-                
-                print("✅ Multi-threaded AR system initialized")
-                print("   - Threaded camera capture: ACTIVE")
-                print("   - Background AR processing: ACTIVE")
-                print("   - Display rendering: ACTIVE")
-                
-                return True
-            
-            else:
-                # Legacy single-threaded AR initialization
-                return self._initialize_legacy_ar_system()
-                
-        except Exception as e:
-            print(f"❌ Multi-threaded AR system initialization failed: {e}")
-            if self.use_threading:
-                print("   Falling back to single-threaded mode...")
-                self.use_threading = False
-                return self._initialize_legacy_ar_system()
-            return False
-    
-    def _initialize_legacy_ar_system(self):
-        """Legacy single-threaded AR system initialization"""
+        """Initialize the AR processing system"""
         try:
             if self.use_enhanced_tracking:
                 # Try enhanced medical AR system first
                 try:
                     self.ar_processor = create_enhanced_medical_ar_system()
-                    print("✅ Enhanced Medical AR system initialized (legacy mode)")
+                    print("✅ Enhanced Medical AR system initialized")
                     print("   - Medical object detection enabled")
                     print("   - 3D spatial anchoring enabled") 
                     print("   - Multi-object tracking enabled")
@@ -252,20 +183,147 @@ class CameraARSystem:
             
             # Fallback to basic system
             self.ar_processor = create_medical_ar_system()
-            print("✅ Basic AR system initialized (legacy mode)")
+            print("✅ Basic AR system initialized")
             return True
             
         except Exception as e:
-            print(f"❌ Legacy AR system initialization failed: {e}")
+            print(f"❌ AR system initialization failed: {e}")
             print("Make sure to install requirements: pip install -r requirements.txt")
             return False
     
-    def get_camera_frames(self):
-        """Capture frames from cameras (legacy mode only)"""
-        if self.use_threading:
-            # In threaded mode, frames are handled by ThreadedCameraCapture
-            return None, None
+    def initialize_webrtc_connection(self):
+        """Initialize WebRTC bridge connection"""
+        if not self.webrtc_enabled or not self.room_id:
+            return False
         
+        try:
+            print(f"🌐 Connecting to WebRTC bridge at {self.bridge_url}")
+            
+            # Start WebSocket connection in a separate thread
+            self.websocket_thread = threading.Thread(
+                target=self._run_websocket_connection, 
+                daemon=True
+            )
+            self.websocket_thread.start()
+            
+            # Wait briefly for connection
+            time.sleep(1)
+            
+            if self.connected_to_bridge:
+                print("✅ Connected to WebRTC bridge")
+                return True
+            else:
+                print("⚠️  WebRTC bridge connection pending...")
+                return True  # Still try to continue
+                
+        except Exception as e:
+            print(f"❌ WebRTC connection failed: {e}")
+            return False
+    
+    def _run_websocket_connection(self):
+        """Run WebSocket connection in separate thread"""
+        if not WEBSOCKET_AVAILABLE:
+            return
+        
+        # Create a new event loop for this thread
+        self.websocket_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.websocket_loop)
+        
+        try:
+            self.websocket_loop.run_until_complete(self._websocket_client())
+        except Exception as e:
+            print(f"WebSocket thread error: {e}")
+        finally:
+            self.websocket_loop.close()
+    
+    async def _websocket_client(self):
+        """WebSocket client for bridge communication"""
+        try:
+            async with websockets.connect(self.bridge_url) as websocket:
+                self.websocket_connection = websocket
+                self.connected_to_bridge = True
+                
+                # Join the room
+                await websocket.send(json.dumps({
+                    'type': 'join_room',
+                    'roomId': self.room_id,
+                    'clientType': 'ar_field_medic'
+                }))
+                
+                print(f"📱 AR client joined room {self.room_id}")
+                
+                # Listen for messages
+                async for message in websocket:
+                    try:
+                        data = json.loads(message)
+                        await self._handle_bridge_message(data)
+                    except json.JSONDecodeError:
+                        print(f"Invalid JSON from bridge: {message}")
+                        
+        except websockets.exceptions.ConnectionClosed:
+            print("🔌 WebRTC bridge connection closed")
+            self.connected_to_bridge = False
+        except Exception as e:
+            print(f"WebSocket client error: {e}")
+            self.connected_to_bridge = False
+    
+    async def _handle_bridge_message(self, data):
+        """Handle messages from WebRTC bridge"""
+        message_type = data.get('type')
+        
+        if message_type == 'annotation_received':
+            # Received annotation from doctor via WebRTC platform
+            annotation = data.get('annotation', {})
+            source = data.get('source', 'unknown')
+            
+            # Add to annotation queue for display
+            self.annotation_queue.append({
+                'annotation': annotation,
+                'source': source,
+                'timestamp': time.time(),
+                'type': 'received'
+            })
+            
+            print(f"📥 Received annotation from {source}")
+            
+        elif message_type == 'video_call_request':
+            room_id = data.get('roomId')
+            print(f"📞 Video call request for room {room_id}")
+            
+        elif message_type == 'ar_annotations_clear':
+            # Clear all annotations command from platform
+            self.clear_drawings()
+            print("🗑️  All annotations cleared by platform")
+    
+    def send_annotation_to_platform(self, annotation_data):
+        """Send drawing annotation to WebRTC platform"""
+        if not self.connected_to_bridge or not self.websocket_connection:
+            return False
+        
+        try:
+            message = {
+                'type': 'annotation',
+                'roomId': self.room_id,
+                'annotation': annotation_data,
+                'timestamp': time.time(),
+                'source': 'ar_field_medic'
+            }
+            
+            # Send via WebSocket (non-blocking)
+            if self.websocket_loop and not self.websocket_loop.is_closed():
+                asyncio.run_coroutine_threadsafe(
+                    self.websocket_connection.send(json.dumps(message)),
+                    self.websocket_loop
+                )
+                return True
+                
+        except Exception as e:
+            print(f"Error sending annotation: {e}")
+            
+        return False
+    
+    def get_camera_frames(self):
+        """Capture frames from cameras"""
         if self.camera_mode == 'stereo':
             ret_l, left_frame = self.left_camera.read()
             ret_r, right_frame = self.right_camera.read()
@@ -298,44 +356,8 @@ class CameraARSystem:
             'gyro': [0.01, 0.02, 0.01]   # Gyroscope (rad/s)
         }
     
-    def _setup_key_handlers(self):
-        """Setup keyboard event handlers for multi-threaded mode"""
-        if not self.display_renderer:
-            return
-        
-        # Map key handlers
-        key_handlers = {
-            'q': lambda: self.coordinator.signal_shutdown(),
-            's': self.save_session,
-            'd': self.toggle_drawing_mode,
-            'c': self.cycle_drawing_color,
-            'x': self.clear_drawings,
-            'a': self.toggle_anchor_mode,
-            'o': self.toggle_object_anchor_mode,
-            'r': self._clear_selected_object,
-            't': self._show_tracking_statistics,
-            'v': self.toggle_object_selection_mode,  # 'v' for 'view/select'
-            'z': self.clear_object_selection  # 'z' for 'clear selection'
-        }
-        
-        for key, handler in key_handlers.items():
-            self.display_renderer.set_key_handler(key, handler)
-    
     def mouse_callback(self, event, x, y, flags, param):
-        """Handle mouse events for object selection, drawing and 3D anchoring"""
-        if event == cv2.EVENT_LBUTTONDOWN:
-            # Priority 1: Object selection mode (independent of drawing mode)
-            if self.object_selection_mode and self.use_enhanced_tracking:
-                selected_obj = self._select_object_for_highlighting((x, y))
-                if selected_obj:
-                    self.selected_for_highlighting = selected_obj['track_id']
-                    print(f"🎯 Selected object {self.selected_for_highlighting} ({selected_obj['class_name']}) for highlighting")
-                    return
-                else:
-                    print("❌ No object found at click position")
-                    return
-        
-        # Return early if not in drawing mode for drawing-related operations
+        """Handle mouse events for drawing and 3D anchoring"""
         if not self.drawing_mode:
             return
             
@@ -418,6 +440,22 @@ class CameraARSystem:
                 if not line_data['is_object_anchored']:
                     self.drawing_lines.append(line_data)
                 
+                # Send annotation to WebRTC platform if connected
+                if self.webrtc_enabled and self.connected_to_bridge:
+                    annotation_data = {
+                        'type': 'line_drawing',
+                        'points': self.current_line,
+                        'color': self.drawing_color,
+                        'thickness': self.drawing_thickness,
+                        'is_3d_anchored': line_data.get('is_3d_anchored', False),
+                        'is_object_anchored': line_data.get('is_object_anchored', False),
+                        'anchored_object_id': line_data.get('anchored_object_id'),
+                        'drawing_mode': 'field_medic_ar'
+                    }
+                    
+                    if self.send_annotation_to_platform(annotation_data):
+                        print(f"📤 Sent drawing annotation to platform")
+                
             self.current_line = []
             self.last_mouse_pos = None
     
@@ -452,7 +490,6 @@ class CameraARSystem:
         self.drawing_lines.clear()
         self.current_line.clear()
         self.drawing_points.clear()
-        self.object_anchored_drawings.clear()  # Clear object-anchored drawings too
     
     def toggle_drawing_mode(self):
         """Toggle drawing mode on/off"""
@@ -471,58 +508,8 @@ class CameraARSystem:
             self.selected_object_id = None  # Clear selection when disabling
         return self.object_anchor_mode
     
-    def toggle_object_selection_mode(self):
-        """Toggle object selection mode for highlighting"""
-        self.object_selection_mode = not self.object_selection_mode
-        if not self.object_selection_mode:
-            self.selected_for_highlighting = None  # Clear selection when disabling
-        return self.object_selection_mode
-    
-    def clear_object_selection(self):
-        """Clear the currently selected object"""
-        self.selected_for_highlighting = None
-        print("🔘 Object selection cleared")
-    
     def _select_object_at_position(self, screen_pos):
         """Select object at screen position for drawing anchoring"""
-        # Get current AR results to find tracked objects
-        if not hasattr(self, '_last_ar_results') or not self._last_ar_results:
-            return None
-        
-        tracked_objects = self._last_ar_results.get('tracked_objects', [])
-        x_click, y_click = screen_pos
-        
-        best_object = None
-        min_distance = float('inf')
-        
-        for obj in tracked_objects:
-            if hasattr(obj, 'bbox') and hasattr(obj, 'track_id'):
-                bbox = obj.bbox
-                # Calculate center of bounding box
-                obj_center_x = (bbox[0] + bbox[2]) // 2
-                obj_center_y = (bbox[1] + bbox[3]) // 2
-                
-                # Calculate distance from click to object center
-                distance = np.sqrt((x_click - obj_center_x)**2 + (y_click - obj_center_y)**2)
-                
-                # Check if click is within bounding box and selection radius
-                if (bbox[0] <= x_click <= bbox[2] and 
-                    bbox[1] <= y_click <= bbox[3] and
-                    distance < self.object_selection_radius and
-                    distance < min_distance):
-                    
-                    min_distance = distance
-                    best_object = {
-                        'track_id': obj.track_id,
-                        'class_name': getattr(obj, 'class_name', 'unknown'),
-                        'bbox': bbox,
-                        'center': (obj_center_x, obj_center_y)
-                    }
-        
-        return best_object
-    
-    def _select_object_for_highlighting(self, screen_pos):
-        """Select object at screen position for highlighting (not drawing)"""
         # Get current AR results to find tracked objects
         if not hasattr(self, '_last_ar_results') or not self._last_ar_results:
             return None
@@ -612,14 +599,6 @@ class CameraARSystem:
         """Adjust drawing thickness"""
         self.drawing_thickness = max(1, min(10, self.drawing_thickness + delta))
     
-    def _clear_selected_object(self):
-        """Clear selected object for drawing"""
-        if self.selected_object_id is not None:
-            print(f"❌ Cleared selected object {self.selected_object_id}")
-            self.selected_object_id = None
-        else:
-            print("ℹ️  No object was selected")
-    
     def draw_overlay(self, frame, ar_results=None):
         """Draw the interactive overlay on the frame"""
         overlay_frame = frame.copy()
@@ -676,11 +655,6 @@ class CameraARSystem:
             cv2.putText(overlay_frame, 'OBJECT', (70, 85), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 165, 0), 1)
         
-        if self.object_selection_mode:
-            cv2.circle(overlay_frame, (50, 110), 15, (0, 165, 255), -1)
-            cv2.putText(overlay_frame, 'SELECT', (70, 115), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
-        
         return overlay_frame
     
     def _draw_tracked_objects(self, frame, ar_results):
@@ -694,68 +668,20 @@ class CameraARSystem:
                 confidence = getattr(obj, 'confidence', 0.0)
                 track_id = getattr(obj, 'track_id', -1)
                 
-                # Enhanced highlighting for different selection types
-                is_selected_for_drawing = (track_id == self.selected_object_id)
-                is_selected_for_highlighting = (track_id == self.selected_for_highlighting)
-                
-                # Determine color and styling based on selection type
-                if is_selected_for_highlighting:
-                    # Bright orange/yellow for highlighted selection
-                    color = (0, 165, 255)  # Orange
-                    thickness = 4
-                    label_prefix = "🔍 "
-                elif is_selected_for_drawing:
-                    # Cyan for drawing anchor selection
-                    color = (255, 255, 0)  # Cyan
-                    thickness = 3
-                    label_prefix = "🎯 "
-                else:
-                    # Default colors based on confidence
-                    color = (0, 255, 0) if confidence > 0.7 else (0, 200, 200)
-                    thickness = 2
-                    label_prefix = ""
+                # Highlight selected object
+                is_selected = (track_id == self.selected_object_id)
+                color = (0, 255, 255) if is_selected else ((0, 255, 0) if confidence > 0.7 else (0, 200, 200))
+                thickness = 3 if is_selected else 2
                 
                 # Draw bounding box
                 cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, thickness)
                 
-                # Draw enhanced corners for selected objects
-                if is_selected_for_highlighting or is_selected_for_drawing:
-                    corner_length = 20
-                    corner_thickness = 3
-                    # Top-left corner
-                    cv2.line(frame, (bbox[0], bbox[1]), (bbox[0] + corner_length, bbox[1]), color, corner_thickness)
-                    cv2.line(frame, (bbox[0], bbox[1]), (bbox[0], bbox[1] + corner_length), color, corner_thickness)
-                    # Top-right corner
-                    cv2.line(frame, (bbox[2], bbox[1]), (bbox[2] - corner_length, bbox[1]), color, corner_thickness)
-                    cv2.line(frame, (bbox[2], bbox[1]), (bbox[2], bbox[1] + corner_length), color, corner_thickness)
-                    # Bottom-left corner
-                    cv2.line(frame, (bbox[0], bbox[3]), (bbox[0] + corner_length, bbox[3]), color, corner_thickness)
-                    cv2.line(frame, (bbox[0], bbox[3]), (bbox[0], bbox[3] - corner_length), color, corner_thickness)
-                    # Bottom-right corner
-                    cv2.line(frame, (bbox[2], bbox[3]), (bbox[2] - corner_length, bbox[3]), color, corner_thickness)
-                    cv2.line(frame, (bbox[2], bbox[3]), (bbox[2], bbox[3] - corner_length), color, corner_thickness)
-                
-                # Draw label with enhanced formatting for selected objects
-                label = f"{label_prefix}{class_name}({track_id}): {confidence:.2f}"
-                label_bg_color = color if (is_selected_for_highlighting or is_selected_for_drawing) else None
-                
-                # Draw label background for selected objects
-                if label_bg_color:
-                    label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                    cv2.rectangle(frame, 
-                                (bbox[0] - 2, bbox[1] - label_size[1] - 15), 
-                                (bbox[0] + label_size[0] + 4, bbox[1] - 5), 
-                                label_bg_color, -1)
-                    text_color = (0, 0, 0)  # Black text on colored background
-                    font_scale = 0.6
-                    font_thickness = 2
-                else:
-                    text_color = color
-                    font_scale = 0.5
-                    font_thickness = 1
-                
+                # Draw label with track ID
+                label = f"{class_name}({track_id}): {confidence:.2f}"
+                if is_selected:
+                    label = f">>> {label} <<<"  # Highlight selected object
                 cv2.putText(frame, label, (bbox[0], bbox[1] - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, font_thickness)
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     
     def _draw_object_anchored_drawings(self, frame, ar_results):
         """Draw object-anchored drawings that follow tracked objects"""
@@ -920,21 +846,10 @@ class CameraARSystem:
             cv2.putText(display_frame, obj_anchor_text, 
                        (250, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.6, obj_anchor_color, 1)
             
-            # Object selection mode
-            selection_text = "SELECT MODE ON" if self.object_selection_mode else "SELECT MODE OFF"
-            selection_color = (0, 165, 255) if self.object_selection_mode else (128, 128, 128)
-            cv2.putText(display_frame, selection_text, 
-                       (250, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, selection_color, 1)
-            
-            # Show selected object info (for drawing)
+            # Show selected object info
             if self.selected_object_id is not None:
-                cv2.putText(display_frame, f"Draw Target: Obj {self.selected_object_id}", 
+                cv2.putText(display_frame, f"Selected: Obj {self.selected_object_id}", 
                            (10, 290), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 2)
-            
-            # Show highlighted object info (for selection)
-            if self.selected_for_highlighting is not None:
-                cv2.putText(display_frame, f"🔍 Highlighted: Obj {self.selected_for_highlighting}", 
-                           (10, 320), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
         
         # Drawing color indicator
         if self.drawing_mode:
@@ -947,14 +862,26 @@ class CameraARSystem:
             cv2.rectangle(display_frame, (200, 180), (240, 210), self.drawing_color, -1)
             cv2.rectangle(display_frame, (200, 180), (240, 210), (255, 255, 255), 1)
         
+        # WebRTC connection status
+        if self.webrtc_enabled:
+            webrtc_status = "CONNECTED" if self.connected_to_bridge else "DISCONNECTED"
+            webrtc_color = (0, 255, 0) if self.connected_to_bridge else (0, 0, 255)
+            cv2.putText(display_frame, f'WebRTC: {webrtc_status}', 
+                       (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.6, webrtc_color, 1)
+            
+            if self.room_id:
+                cv2.putText(display_frame, f'Room: {self.room_id}', 
+                           (200, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
         # Drawing statistics
         total_lines = len(self.drawing_lines)
         anchored_lines = sum(1 for line in self.drawing_lines if line.get('is_3d_anchored', False))
         object_anchored_lines = sum(len(drawings) for drawings in self.object_anchored_drawings.values())
         
+        stats_y = 260 if self.webrtc_enabled else 230
         if total_lines > 0 or object_anchored_lines > 0:
             cv2.putText(display_frame, f'Lines: {total_lines} (3D: {anchored_lines}, Obj: {object_anchored_lines})', 
-                       (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                       (10, stats_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
         # System status
         system_status = results.get('system_status', {})
@@ -982,7 +909,7 @@ class CameraARSystem:
         cv2.setMouseCallback('Medical AR - Enhanced Interactive Camera', self.mouse_callback)
     
     def run(self):
-        """Main processing loop with multi-threading support"""
+        """Main processing loop"""
         print("🔬 Starting Medical AR Camera System")
         print("=" * 50)
         
@@ -993,113 +920,13 @@ class CameraARSystem:
             self.cleanup()
             return False
         
-        if self.use_threading:
-            return self._run_threaded_mode()
-        else:
-            return self._run_legacy_mode()
-    
-    def _run_threaded_mode(self):
-        """Run the system in multi-threaded mode"""
-        print("\n📡 Multi-threaded Medical AR System is running!")
-        print("🕐️ Performance optimizations: ACTIVE")
-        print("   - Threaded camera capture")
-        print("   - Background AR processing")
-        print("   - Adaptive quality control")
+        # Initialize WebRTC connection if enabled
+        if self.webrtc_enabled:
+            self.initialize_webrtc_connection()
         
-        if self.ar_processor_worker and self.ar_processor_worker.ar_available:
-            print("🔬 Enhanced Medical Tracking: ENABLED")
-            print("   - Medical object detection active")
-            print("   - 3D spatial anchoring available")
-        else:
-            print("⚠️  Enhanced Medical Tracking: DISABLED (using basic system)")
-        
-        print("\nControls:")
-        print("  - Left click and drag to draw on the camera feed")
-        print("  - Press 'q' to quit")
-        print("  - Press 's' to save current session")
-        print("  - Press ESC or 'p' to pause/resume")
-        print("  - Press 'd' to toggle drawing mode on/off")
-        print("  - Press 'c' to cycle drawing colors")
-        print("  - Press 'x' to clear all drawings")
-        print("  - Press '+/-' to increase/decrease line thickness")
-        if self.ar_processor_worker and self.ar_processor_worker.ar_available:
-            print("  - Press 'a' to toggle 3D anchor mode (for spatial anchoring)")
-            print("  - Press 'o' to toggle object anchor mode (drawings follow objects)")
-            print("  - Press 'v' to toggle object selection mode (highlight objects)")
-            print("  - Press 'z' to clear highlighted object")
-            print("  - Press 'r' to clear selected object (for drawing)")
-            print("  - Press 't' to show tracking statistics")
-        print("\nProcessing frames with multi-threading...")
-        
-        try:
-            # Monitor performance and system health
-            last_stats_time = time.time()
-            frame_count = 0
-            
-            while not self.coordinator.is_shutdown_requested():
-                # Render frame on main thread (required for macOS)
-                key_result = self.display_renderer.render_frame()
-                
-                # Handle quit command
-                if key_result == 'quit':
-                    break
-                
-                # Check thread health
-                thread_health = self.coordinator.get_thread_health()
-                
-                # Check for errors
-                errors = self.coordinator.get_errors()
-                for thread_name, error, timestamp in errors:
-                    logging.error(f"Thread {thread_name} error: {error}")
-                
-                # Print performance statistics periodically
-                current_time = time.time()
-                if current_time - last_stats_time >= 5.0:  # Every 5 seconds
-                    self._print_performance_stats()
-                    last_stats_time = current_time
-                
-                frame_count += 1
-                
-                # Small sleep to prevent excessive CPU usage
-                time.sleep(0.001)  # 1ms sleep
-        
-        except KeyboardInterrupt:
-            print("\n⏹️  Interrupted by user")
-        
-        except Exception as e:
-            logging.error(f"Threaded mode error: {e}")
-        
-        finally:
-            self.cleanup()
-            print("👋 Multi-threaded camera AR system stopped")
-            return True
-    
-    def _print_performance_stats(self):
-        """Print current performance statistics"""
-        if not self.performance_monitor:
-            return
-        
-        stats = self.performance_monitor.get_stats()
-        
-        # Extract key metrics
-        capture_fps = stats.get('capture_fps', {}).get('current', 0)
-        processing_fps = stats.get('processing_fps', {}).get('current', 0)
-        display_fps = stats.get('display_fps', {}).get('current', 0)
-        
-        capture_stats = self.camera_capture.get_stats()
-        processing_stats = self.ar_processor_worker.get_stats() if self.ar_processor_worker else {}
-        
-        print(f"\n📈 Performance: Capture={capture_fps:.1f} FPS, Processing={processing_fps:.1f} FPS, Display={display_fps:.1f} FPS")
-        print(f"   Buffer: {capture_stats.get('current_size', 0)}/{capture_stats.get('max_size', 0)}, "
-              f"Dropped: {capture_stats.get('dropped_frames', 0)}, "
-              f"Processed: {processing_stats.get('frames_processed', 0)}")
-    
-    def _run_legacy_mode(self):
-        """Run the system in legacy single-threaded mode"""
-        
-        print("\n📹 Legacy Medical AR Interactive System is running!")
+        print("\n📹 Enhanced Medical AR Interactive System is running!")
         if self.use_enhanced_tracking:
-            print("🔬 Enhanced Medical Tracking: ENABLED (single-threaded)")
+            print("🔬 Enhanced Medical Tracking: ENABLED")
             print("   - Medical object detection active")
             print("   - 3D spatial anchoring available")
         else:
@@ -1117,11 +944,9 @@ class CameraARSystem:
         if self.use_enhanced_tracking:
             print("  - Press 'a' to toggle 3D anchor mode (for spatial anchoring)")
             print("  - Press 'o' to toggle object anchor mode (drawings follow objects)")
-            print("  - Press 'v' to toggle object selection mode (highlight objects)")
-            print("  - Press 'z' to clear highlighted object")
-            print("  - Press 'r' to clear selected object (for drawing)")
+            print("  - Press 'r' to clear selected object")
             print("  - Press 't' to show tracking statistics")
-        print("\nProcessing frames (single-threaded mode)...")
+        print("\nProcessing frames...")
         
         paused = False
         frame_count = 0
@@ -1203,13 +1028,6 @@ class CameraARSystem:
                         print("ℹ️  No object was selected")
                 elif key == ord('t') and self.use_enhanced_tracking:
                     self._show_tracking_statistics()
-                elif key == ord('v') and self.use_enhanced_tracking:
-                    selection_status = "ON" if self.toggle_object_selection_mode() else "OFF"
-                    print(f"🔍 Object Selection mode: {selection_status}")
-                    if selection_status == "ON":
-                        print("   Click on an object to select it for highlighting")
-                elif key == ord('z') and self.use_enhanced_tracking:
-                    self.clear_object_selection()
         
         except KeyboardInterrupt:
             print("\n⏹️  Interrupted by user")
@@ -1226,65 +1044,24 @@ class CameraARSystem:
         """Save current AR session"""
         try:
             session_path = f"camera_ar_session_{int(time.time())}.pkl"
-            
-            if self.use_threading and self.ar_processor_worker:
-                # Multi-threaded mode - get AR processor from worker
-                ar_processor = self.ar_processor_worker.ar_processor
-                if ar_processor and hasattr(ar_processor, 'save_session'):
-                    if ar_processor.save_session(session_path):
-                        print(f"✅ Session saved to {session_path}")
-                    else:
-                        print("❌ Failed to save session")
-                else:
-                    print("❌ Session saving not available in current mode")
-            elif self.ar_processor and hasattr(self.ar_processor, 'save_session'):
-                # Legacy mode
-                if self.ar_processor.save_session(session_path):
-                    print(f"✅ Session saved to {session_path}")
-                else:
-                    print("❌ Failed to save session")
+            if self.ar_processor.save_session(session_path):
+                print(f"✅ Session saved to {session_path}")
             else:
-                print("❌ Session saving not available")
-                
+                print("❌ Failed to save session")
         except Exception as e:
             print(f"❌ Error saving session: {e}")
     
     def _show_tracking_statistics(self):
         """Display detailed tracking statistics"""
-        ar_processor = None
-        
-        if self.use_threading and self.ar_processor_worker:
-            ar_processor = self.ar_processor_worker.ar_processor
-        elif not self.use_threading and self.ar_processor:
-            ar_processor = self.ar_processor
-        
-        if not ar_processor or not hasattr(ar_processor, 'get_tracking_statistics'):
+        if not self.use_enhanced_tracking or not hasattr(self.ar_processor, 'get_tracking_statistics'):
             print("❌ Enhanced tracking statistics not available")
             return
         
         try:
-            stats = ar_processor.get_tracking_statistics()
-            mode_text = "MULTI-THREADED" if self.use_threading else "SINGLE-THREADED"
-            print("\n" + "=" * 60)
-            print(f"📊 {mode_text} MEDICAL AR TRACKING STATISTICS")
-            print("=" * 60)
-            
-            # Add threading-specific stats
-            if self.use_threading:
-                perf_stats = self.performance_monitor.get_stats() if self.performance_monitor else {}
-                capture_stats = self.camera_capture.get_stats() if self.camera_capture else {}
-                processing_stats = self.ar_processor_worker.get_stats() if self.ar_processor_worker else {}
-                
-                print("\nThreading Performance:")
-                capture_fps = perf_stats.get('capture_fps', {}).get('current', 0)
-                processing_fps = perf_stats.get('processing_fps', {}).get('current', 0)
-                display_fps = perf_stats.get('display_fps', {}).get('current', 0)
-                print(f"  Capture FPS: {capture_fps:.1f}")
-                print(f"  Processing FPS: {processing_fps:.1f}")
-                print(f"  Display FPS: {display_fps:.1f}")
-                print(f"  Buffer Utilization: {capture_stats.get('utilization', 0)*100:.1f}%")
-                print(f"  Frames Dropped: {capture_stats.get('dropped_frames', 0)}")
-                print(f"  Frames Skipped: {processing_stats.get('frames_skipped', 0)}")
+            stats = self.ar_processor.get_tracking_statistics()
+            print("\n" + "=" * 50)
+            print("📊 ENHANCED MEDICAL AR TRACKING STATISTICS")
+            print("=" * 50)
             
             print(f"Total Trackers: {stats.get('total_trackers', 0)}")
             print(f"Active Trackers: {stats.get('active_trackers', 0)}")
@@ -1306,92 +1083,63 @@ class CameraARSystem:
             print(f"  3D Anchored Lines: {anchored_lines}")
             print(f"  Manual Anchors: {len(self.spatial_anchors)}")
             
-            print("=" * 60)
+            print("=" * 50)
             
         except Exception as e:
             print(f"❌ Error retrieving tracking statistics: {e}")
     
     def cleanup(self):
         """Clean up resources"""
-        # Stop multi-threaded components first
-        if self.use_threading:
-            print("🔄 Stopping multi-threaded components...")
-            
-            if self.display_renderer:
-                self.display_renderer.stop_display()
-            
-            if self.ar_processor_worker:
-                self.ar_processor_worker.stop_processing()
-            
-            if self.camera_capture:
-                self.camera_capture.stop_capture()
-            
-            if self.coordinator:
-                self.coordinator.signal_shutdown()
-        
-        # Clean up legacy components
         if self.left_camera:
             self.left_camera.release()
         if self.right_camera:
             self.right_camera.release()
         if self.single_camera:
             self.single_camera.release()
-        
         cv2.destroyAllWindows()
-        print("✅ Cleanup completed")
 
 
 def main():
     """Main function"""
-    print("🔬 Medical AR - Multi-threaded Interactive Camera Integration")
-    print("=" * 60)
+    parser = argparse.ArgumentParser(description="Medical AR Interactive Camera Integration")
+    parser.add_argument('--webrtc-enabled', action='store_true', 
+                       help='Enable WebRTC integration for annotation sharing')
+    parser.add_argument('--room-id', type=str, 
+                       help='WebRTC room ID for annotation sharing')
+    parser.add_argument('--bridge-url', type=str, default='ws://localhost:8765',
+                       help='WebSocket URL for WebRTC bridge connection')
+    parser.add_argument('--camera-mode', choices=['single', 'stereo', 'auto'], 
+                       default='single', help='Camera configuration mode')
+    parser.add_argument('--camera-id', type=int, default=0, 
+                       help='Camera ID (for single camera mode)')
+    args = parser.parse_args()
     
-    # Threading mode selection
-    print("Performance mode options:")
-    print("1. Multi-threaded (optimized for high frame rates)")
-    print("2. Single-threaded (legacy mode)")
+    print("🔬 Medical AR - Interactive Camera Integration")
+    print("=" * 50)
     
-    try:
-        threading_choice = input("\nSelect performance mode (1-2) [default: 1]: ").strip()
-        use_threading = threading_choice != '2'
-        
-        if use_threading:
-            print("✅ Multi-threaded mode selected")
-            # Get target FPS for optimization
-            fps_input = input("Target FPS (15-60) [default: 30]: ").strip()
-            target_fps = int(fps_input) if fps_input.isdigit() and 15 <= int(fps_input) <= 60 else 30
+    # WebRTC configuration
+    if args.webrtc_enabled:
+        print(f"🌐 WebRTC Integration: ENABLED")
+        print(f"   Bridge URL: {args.bridge_url}")
+        if args.room_id:
+            print(f"   Room ID: {args.room_id}")
         else:
-            print("⚠️  Single-threaded legacy mode selected")
-            target_fps = 30
-        
-        print(f"Target FPS: {target_fps}")
+            print("⚠️  No room ID specified - annotations won't be shared")
+    else:
+        print("🌐 WebRTC Integration: DISABLED")
     
-    except (ValueError, KeyboardInterrupt):
-        print("\nUsing default settings: multi-threaded, 30 FPS")
-        use_threading = True
-        target_fps = 30
-    
-    # Camera configuration options
-    print("\nCamera configuration options:")
-    print("1. Single camera (side-by-side stereo)")
-    print("2. Dual cameras (separate left/right)")
-    print("3. Auto-detect")
+    # Camera configuration
+    if args.camera_mode == 'auto':
+        print("\nCamera configuration: Auto-detect")
+    else:
+        print(f"Camera configuration: {args.camera_mode}")
+        print("To use interactive mode, run without arguments")
     
     try:
-        choice = input("\nSelect option (1-3) [default: 1]: ").strip()
-        if not choice:
-            choice = '1'
-        
-        if choice == '2':
-            camera_mode = 'stereo'
-            left_id = int(input("Left camera ID [0]: ") or "0")
-            right_id = int(input("Right camera ID [1]: ") or "1")
-            camera_system = CameraARSystem('stereo', left_id, right_id, use_threading, target_fps)
-        elif choice == '3':
-            # Auto-detect available cameras
+        # Auto-detect cameras if requested
+        if args.camera_mode == 'auto':
             print("Detecting available cameras...")
             available_cameras = []
-            print("AVAILABLE_CAMERAS:" ,available_cameras)
             for i in range(4):  # Check first 4 camera indices
                 cap = cv2.VideoCapture(i)
                 if cap.isOpened():
@@ -1400,23 +1148,34 @@ def main():
             
             print(f"Available cameras: {available_cameras}")
             if len(available_cameras) >= 2:
-                camera_mode = 'stereo'
-                camera_system = CameraARSystem('stereo', available_cameras[0], available_cameras[1], use_threading, target_fps)
+                camera_system = CameraARSystem(
+                    'stereo', available_cameras[0], available_cameras[1],
+                    webrtc_enabled=args.webrtc_enabled,
+                    room_id=args.room_id,
+                    bridge_url=args.bridge_url
+                )
                 print(f"Using stereo mode with cameras {available_cameras[0]} and {available_cameras[1]}")
             elif len(available_cameras) >= 1:
-                camera_mode = 'single'
-                camera_system = CameraARSystem('single', available_cameras[0], 0, use_threading, target_fps)
+                camera_system = CameraARSystem(
+                    'single', available_cameras[0],
+                    webrtc_enabled=args.webrtc_enabled,
+                    room_id=args.room_id,
+                    bridge_url=args.bridge_url
+                )
                 print(f"Using single camera mode with camera {available_cameras[0]}")
             else:
                 print("❌ No cameras detected")
                 return
-        else:  # Default: single camera
-            camera_mode = 'single'
-            camera_id = int(input("Camera ID [0]: ") or "0")
-            camera_system = CameraARSystem('single', camera_id, 0, use_threading, target_fps)
+        else:
+            # Use specified camera mode
+            camera_system = CameraARSystem(
+                args.camera_mode, args.camera_id,
+                webrtc_enabled=args.webrtc_enabled,
+                room_id=args.room_id,
+                bridge_url=args.bridge_url
+            )
         
-        threading_mode = "multi-threaded" if use_threading else "single-threaded"
-        print(f"\n🚀 Starting {threading_mode} {camera_mode} camera AR system (FPS: {target_fps})...")
+        print(f"\n🚀 Starting {args.camera_mode} camera AR system...")
         camera_system.run()
         
     except KeyboardInterrupt:

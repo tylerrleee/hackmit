@@ -466,9 +466,12 @@ class DisplayRenderer:
         # Display settings
         self.display_settings = {
             'window_name': 'Medical AR System',
+            'fullscreen_window_name': 'Medical AR System - Fullscreen',
             'show_fps': False,  # Disabled for cleaner interface
             'show_stats': True, 
-            'show_overlays': True
+            'show_overlays': True,
+            'fullscreen_mode': False,
+            'ui_scale_factor': 1.0
         }
         
         # User interaction
@@ -495,6 +498,47 @@ class DisplayRenderer:
     def set_key_handler(self, key: str, handler: Callable):
         """Set keyboard key handler"""
         self.key_handlers[key] = handler
+    
+    def toggle_fullscreen(self):
+        """Toggle fullscreen display mode"""
+        self.display_settings['fullscreen_mode'] = not self.display_settings['fullscreen_mode']
+        
+        if self.display_settings['fullscreen_mode']:
+            # Switch to fullscreen
+            if self.window_initialized:
+                cv2.destroyWindow(self.display_settings['window_name'])
+            
+            # Create fullscreen window
+            cv2.namedWindow(self.display_settings['fullscreen_window_name'], cv2.WINDOW_NORMAL)
+            cv2.setWindowProperty(self.display_settings['fullscreen_window_name'], 
+                                 cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            
+            # Update UI scale factor for fullscreen
+            self.display_settings['ui_scale_factor'] = 1.5
+            
+            # Set mouse callback for fullscreen window
+            if self.mouse_callback:
+                cv2.setMouseCallback(self.display_settings['fullscreen_window_name'], self._mouse_handler)
+                
+            logging.info("Switched to fullscreen mode")
+        else:
+            # Switch back to windowed mode
+            if self.window_initialized:
+                cv2.destroyWindow(self.display_settings['fullscreen_window_name'])
+            
+            # Create regular window
+            cv2.namedWindow(self.display_settings['window_name'], cv2.WINDOW_AUTOSIZE)
+            
+            # Reset UI scale factor
+            self.display_settings['ui_scale_factor'] = 1.0
+            
+            # Set mouse callback for regular window
+            if self.mouse_callback:
+                cv2.setMouseCallback(self.display_settings['window_name'], self._mouse_handler)
+                
+            logging.info("Switched to windowed mode")
+        
+        return self.display_settings['fullscreen_mode']
     
     def initialize_display(self):
         """Initialize display (must be called from main thread)"""
@@ -551,8 +595,11 @@ class DisplayRenderer:
             # Render frame with overlays
             display_frame = self._render_frame(frame_data, ar_results)
             
-            # Display frame
-            cv2.imshow(self.display_settings['window_name'], display_frame)
+            # Display frame using appropriate window
+            window_name = (self.display_settings['fullscreen_window_name'] 
+                          if self.display_settings['fullscreen_mode'] 
+                          else self.display_settings['window_name'])
+            cv2.imshow(window_name, display_frame)
             
             # Update statistics
             self.stats['frames_displayed'] += 1
@@ -584,6 +631,10 @@ class DisplayRenderer:
         
         if self.display_settings['show_fps']:
             frame = self._render_fps_overlay(frame)
+        
+        # Render WebRTC annotations from doctor if available
+        if hasattr(self.camera_system, 'ar_webrtc_client') and self.camera_system.ar_webrtc_client:
+            frame = self.camera_system.ar_webrtc_client.overlay_annotations_on_frame(frame)
         
         return frame
     

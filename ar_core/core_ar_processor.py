@@ -22,9 +22,30 @@ try:
     import open3d as o3d
     from sklearn.decomposition import PCA
     ADVANCED_FEATURES = True
-except ImportError:
-    print("Warning: Some advanced features disabled. Install scipy, open3d, scikit-learn for full functionality.")
+    print("✅ Advanced AR features enabled (SciPy, Open3D, scikit-learn)")
+except ImportError as e:
+    print(f"⚠️  Warning: Some advanced features disabled due to import error: {e}")
+    print("   Install compatible versions: pip install 'numpy<2.0' scipy scikit-learn open3d")
     ADVANCED_FEATURES = False
+    
+    # Provide fallback implementations
+    class DummyRotation:
+        @staticmethod
+        def from_euler(seq, angles, degrees=False):
+            return None
+        def as_matrix(self):
+            return np.eye(3)
+    
+    R = DummyRotation
+    
+    def least_squares(*args, **kwargs):
+        return None
+    
+    def ConvexHull(*args, **kwargs):
+        return None
+        
+    def Delaunay(*args, **kwargs):
+        return None
 
 from .data_structures import Pose6DoF, SpatialAnchor, PlaneInfo, EnvironmentalMesh
 
