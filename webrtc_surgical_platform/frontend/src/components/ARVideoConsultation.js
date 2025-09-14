@@ -15,8 +15,7 @@ const ARVideoConsultation = ({
     const [participants, setParticipants] = useState(new Map());
     const [arSession, setArSession] = useState(null);
     const [drawingMode, setDrawingMode] = useState(true);
-    const [currentTool, setCurrentTool] = useState('pen');
-    const [currentColor, setCurrentColor] = useState('#FF0000');
+    const [currentColor, setCurrentColor] = useState('#00FF00');
     const [lineThickness, setLineThickness] = useState(3);
     const [annotations, setAnnotations] = useState([]);
     
@@ -40,39 +39,8 @@ const ARVideoConsultation = ({
     const remoteVideoRefs = useRef(new Map());
     const bridgeSocketRef = useRef(null);
     
-    // Available drawing tools
-    const drawingTools = {
-        pen: { name: 'Pen', icon: '✏️' },
-        marker: { name: 'Marker', icon: '🖍️' },
-        arrow: { name: 'Arrow', icon: '➡️' },
-        circle: { name: 'Circle', icon: '⭕' },
-        rectangle: { name: 'Rectangle', icon: '⬛' },
-        text: { name: 'Text', icon: '📝' }
-    };
-    
-    const drawingColors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFFFFF', '#000000'];
-    
-    // Initialize component
-    useEffect(() => {
-        if (roomId && userToken) {
-            initializeWebRTCService();
-            connectToBridge();
-        }
-        
-        return () => {
-            // Cleanup WebRTC service
-            if (webrtcServiceRef.current) {
-                webrtcServiceRef.current.disconnect();
-            }
-            
-            // Close bridge connection
-            if (bridgeSocketRef.current) {
-                bridgeSocketRef.current.close();
-                bridgeSocketRef.current = null;
-                setBridgeConnected(false);
-            }
-        };
-    }, [roomId, userToken]);
+    // Simple drawing colors
+    const drawingColors = ['#00FF00', '#FF0000', '#0000FF', '#FFFF00'];
     
     // Initialize WebRTC service
     const initializeWebRTCService = async () => {
@@ -254,31 +222,6 @@ const ARVideoConsultation = ({
         }
     };
     
-    // Initialize camera for field medics
-    const initializeCamera = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    frameRate: { ideal: 30 }
-                },
-                audio: true
-            });
-            
-            // Stream is now managed by WebRTC service
-            if (videoRef.current) {
-                const localStream = webrtcServiceRef.current.getLocalStream();
-                if (localStream) {
-                    videoRef.current.srcObject = localStream;
-                }
-            }
-            
-        } catch (error) {
-            console.error('Failed to get user media:', error);
-            onError('Failed to access camera and microphone');
-        }
-    };
 
     // Connect to AR Bridge for annotation synchronization
     const connectToBridge = async () => {
@@ -383,145 +326,113 @@ const ARVideoConsultation = ({
         }
     };
     
-    // Join consultation room - handled by WebRTC service
-    const joinRoom = () => {
-        // Room joining is handled by WebRTC service in useEffect
-        setIsConnected(true);
-        onConnectionChange(true);
-        
-        // Create AR session if doctor
-        if (userRole === 'doctor') {
-            createARSession();
-        }
-    };
-    
-    // Handle room joined
-    const handleRoomJoined = (data) => {
-        console.log('Joined room:', data);
-        
-        // Create AR session if doctor
-        if (userRole === 'doctor') {
-            createARSession();
-        }
-    };
-    
-    // Handle new participant
-    const handleUserJoined = (data) => {
-        console.log('User joined:', data);
-        
-        const newParticipants = new Map(participants);
-        newParticipants.set(data.user.id, data.user);
-        setParticipants(newParticipants);
-        
-        // WebRTC connections are handled automatically by the service
-    };
-    
-    // Handle participant leaving
-    const handleUserLeft = (data) => {
-        console.log('User left:', data);
-        
-        const newParticipants = new Map(participants);
-        newParticipants.delete(data.userId);
-        setParticipants(newParticipants);
-        
-        // Peer connection cleanup is handled by WebRTC service
-    };
     
     
-    // Handle AR session created
-    const handleARSessionCreated = (data) => {
-        console.log('AR session created:', data);
-        setArSession(data);
-    };
     
-    // Handle AR session available
-    const handleARSessionAvailable = (data) => {
-        console.log('AR session available:', data);
-        setArSession(data);
-    };
+    
+    
+    
     
     // Drawing event handlers
     const handleMouseDown = useCallback((e) => {
-        if (!drawingMode || !arSession) return;
+        if (!drawingMode || userRole !== 'doctor') return;
         
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
         const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = (e.clientY - rect.top) / rect.height;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        
+        const x = ((e.clientX - rect.left) * scaleX) / canvas.width;
+        const y = ((e.clientY - rect.top) * scaleY) / canvas.height;
         
         setIsDrawing(true);
         setCurrentPath([{ x, y, timestamp: Date.now() }]);
-    }, [drawingMode, arSession]);
+        
+        console.log('🖊️ Starting to draw at:', x, y);
+    }, [drawingMode, userRole]);
     
     const handleMouseMove = useCallback((e) => {
-        if (!isDrawing || !drawingMode || !arSession) return;
+        if (!isDrawing || !drawingMode || userRole !== 'doctor') return;
         
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
         const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = (e.clientY - rect.top) / rect.height;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        
+        const x = ((e.clientX - rect.left) * scaleX) / canvas.width;
+        const y = ((e.clientY - rect.top) * scaleY) / canvas.height;
         
         const newPath = [...currentPath, { x, y, timestamp: Date.now() }];
         setCurrentPath(newPath);
         
-        // Draw preview on canvas
-        drawPath(newPath, currentColor, lineThickness, true);
-    }, [isDrawing, drawingMode, arSession, currentPath, currentColor, lineThickness]);
+        // Draw immediately for instant feedback
+        const ctx = canvas.getContext('2d');
+        ctx.globalAlpha = 0.8;
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = lineThickness;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        if (newPath.length >= 2) {
+            const prevPoint = newPath[newPath.length - 2];
+            const currPoint = newPath[newPath.length - 1];
+            
+            ctx.beginPath();
+            ctx.moveTo(prevPoint.x * canvas.width, prevPoint.y * canvas.height);
+            ctx.lineTo(currPoint.x * canvas.width, currPoint.y * canvas.height);
+            ctx.stroke();
+        }
+    }, [isDrawing, drawingMode, userRole, currentPath, currentColor, lineThickness]);
     
     const handleMouseUp = useCallback(() => {
-        if (!isDrawing || !drawingMode || !arSession) return;
+        if (!isDrawing || !drawingMode || userRole !== 'doctor') return;
         
         setIsDrawing(false);
         
         if (currentPath.length > 1) {
-            // Create annotation object
+            // Create simple annotation object
             const annotation = {
-                type: currentTool,
+                id: Date.now(),
+                type: 'draw',
                 data: {
                     points: currentPath,
                     color: currentColor,
                     thickness: lineThickness
                 },
-                metadata: {
-                    tool: currentTool,
-                    timestamp: Date.now()
-                }
+                timestamp: Date.now(),
+                userId: user?.id || 'current-user'
             };
             
-            // Send annotation through WebRTC service
-            if (webrtcServiceRef.current) {
-                // Add to local annotations
-                const newAnnotation = {
-                    id: Date.now(),
-                    ...annotation,
-                    userId: user?.id || 'current-user',
-                    userName: user?.name || 'Current User'
-                };
-                setAnnotations(prev => [...prev, newAnnotation]);
+            // Add to local annotations immediately (always works)
+            setAnnotations(prev => [...prev, annotation]);
+            console.log('✅ Drawing saved:', annotation);
+            
+            // Try to sync with others (non-blocking)
+            try {
+                if (bridgeSocketRef.current && bridgeConnected) {
+                    sendAnnotationToBridge(annotation);
+                    console.log('📡 Sent to AR bridge');
+                }
                 
-                // Send to other participants and field medic via bridge
-                console.log('Sending AR annotation:', newAnnotation);
-                
-                try {
-                    // Send to AR bridge for field medic
-                    sendAnnotationToBridge(newAnnotation);
-                    
-                    // Also send through WebRTC service for other web participants
+                if (webrtcServiceRef.current) {
                     webrtcServiceRef.current.emit('ar-annotation', {
                         roomId: roomId,
-                        annotation: newAnnotation,
+                        annotation: annotation,
                         userId: user?.id
                     });
-                    
-                    console.log('AR annotation synchronized across all participants');
-                } catch (error) {
-                    console.error('Failed to sync annotation:', error);
+                    console.log('📡 Sent to WebRTC participants');
                 }
+            } catch (error) {
+                console.warn('⚠️ Sync failed (drawing still saved locally):', error);
             }
         }
         
         setCurrentPath([]);
-    }, [isDrawing, drawingMode, arSession, currentPath, currentTool, currentColor, lineThickness]);
+    }, [isDrawing, drawingMode, userRole, currentPath, currentColor, lineThickness, user?.id, roomId, bridgeConnected, sendAnnotationToBridge]);
     
     // Draw path on canvas
     const drawPath = (path, color, thickness, isPreview = false) => {
@@ -558,14 +469,6 @@ const ARVideoConsultation = ({
         }
     };
     
-    // Handle annotation history
-    const handleAnnotationHistory = (data) => {
-        console.log('Received annotation history:', data);
-        setAnnotations(data.annotations);
-        
-        // Redraw all annotations
-        redrawAnnotations(data.annotations);
-    };
     
     // Handle annotations cleared
     const handleAnnotationsCleared = (data) => {
@@ -580,11 +483,49 @@ const ARVideoConsultation = ({
         onError(`AR Error: ${data.message}`);
     };
     
+    // Undo last annotation
+    const undoLastAnnotation = () => {
+        if (annotations.length > 0) {
+            const newAnnotations = annotations.slice(0, -1);
+            setAnnotations(newAnnotations);
+            
+            // Redraw canvas with remaining annotations
+            clearCanvas();
+            redrawAnnotations(newAnnotations);
+            
+            console.log('↩️ Undid last annotation');
+            
+            // Try to sync undo with others (non-blocking)
+            try {
+                if (webrtcServiceRef.current) {
+                    webrtcServiceRef.current.emit('ar-annotation-undo', {
+                        roomId: roomId,
+                        userId: user?.id
+                    });
+                }
+            } catch (error) {
+                console.warn('⚠️ Undo sync failed:', error);
+            }
+        }
+    };
+    
     // Clear all annotations
     const clearAllAnnotations = () => {
-        if (arSession) {
-            // Clear annotations through WebRTC service
-            webrtcServiceRef.current.emit('ar-annotations-clear', { clearType: 'all' });
+        setAnnotations([]);
+        clearCanvas();
+        console.log('🗑️ Cleared all annotations');
+        
+        // Try to sync clear with others (non-blocking)
+        try {
+            if (webrtcServiceRef.current) {
+                webrtcServiceRef.current.emit('ar-annotations-clear', { 
+                    roomId: roomId,
+                    clearType: 'all',
+                    userId: user?.id
+                });
+            }
+        } catch (error) {
+            console.warn('⚠️ Clear sync failed:', error);
         }
     };
     
@@ -610,17 +551,27 @@ const ARVideoConsultation = ({
     
     // WebRTC peer connections are handled by the centralized WebRTC service
     
-    // Cleanup
-    const cleanup = async () => {
-        try {
-            if (webrtcServiceRef.current) {
-                await webrtcServiceRef.current.endRoomVideoCall();
-                await webrtcServiceRef.current.disconnect();
-            }
-        } catch (error) {
-            console.error('Error during cleanup:', error);
+    // Initialize component
+    useEffect(() => {
+        if (roomId && userToken) {
+            initializeWebRTCService();
+            connectToBridge();
         }
-    };
+        
+        return () => {
+            // Cleanup WebRTC service
+            if (webrtcServiceRef.current) {
+                webrtcServiceRef.current.disconnect();
+            }
+            
+            // Close bridge connection
+            if (bridgeSocketRef.current) {
+                bridgeSocketRef.current.close();
+                bridgeSocketRef.current = null;
+                setBridgeConnected(false);
+            }
+        };
+    }, [roomId, userToken]);
     
     return (
         <div className={'ar-video-consultation'}>
@@ -696,13 +647,17 @@ const ARVideoConsultation = ({
                         </div>
                     )}
                     
-                    {/* Floating Drawing Tools Overlay (only for doctors) */}
-                    {userRole === 'doctor' && arSession && (
+                    {/* Simplified Drawing Tools (only for doctors) */}
+                    {userRole === 'doctor' && (
                         <div className="floating-drawing-tools">
                             <div className="drawing-toolbar">
+                                {/* Drawing Mode Toggle */}
                                 <button 
                                     className={`tool-toggle ${drawingMode ? 'drawing' : 'viewing'}`}
-                                    onClick={() => setDrawingMode(!drawingMode)}
+                                    onClick={() => {
+                                        setDrawingMode(!drawingMode);
+                                        console.log('🖊️ Drawing mode:', !drawingMode ? 'ON' : 'OFF');
+                                    }}
                                     title={drawingMode ? 'Switch to viewing mode' : 'Switch to drawing mode'}
                                 >
                                     {drawingMode ? '✏️' : '👆'}
@@ -712,30 +667,17 @@ const ARVideoConsultation = ({
                                     <>
                                         <div className="tool-separator"></div>
                                         
-                                        {/* Drawing Tools */}
-                                        <div className="quick-tools">
-                                            {Object.entries(drawingTools).map(([key, tool]) => (
-                                                <button
-                                                    key={key}
-                                                    className={`tool-btn ${currentTool === key ? 'active' : ''}`}
-                                                    onClick={() => setCurrentTool(key)}
-                                                    title={tool.name}
-                                                >
-                                                    {tool.icon}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        
-                                        <div className="tool-separator"></div>
-                                        
-                                        {/* Color Palette */}
+                                        {/* Color Selection */}
                                         <div className="quick-colors">
-                                            {drawingColors.slice(0, 4).map(color => (
+                                            {drawingColors.map(color => (
                                                 <button
                                                     key={color}
                                                     className={`color-dot ${currentColor === color ? 'active' : ''}`}
                                                     style={{ backgroundColor: color }}
-                                                    onClick={() => setCurrentColor(color)}
+                                                    onClick={() => {
+                                                        setCurrentColor(color);
+                                                        console.log('🎨 Color changed to:', color);
+                                                    }}
                                                     title={`Use ${color} color`}
                                                 />
                                             ))}
@@ -746,7 +688,11 @@ const ARVideoConsultation = ({
                                         {/* Thickness Control */}
                                         <div className="thickness-control">
                                             <button 
-                                                onClick={() => setLineThickness(Math.max(1, lineThickness - 1))}
+                                                onClick={() => {
+                                                    const newThickness = Math.max(1, lineThickness - 1);
+                                                    setLineThickness(newThickness);
+                                                    console.log('📏 Thickness:', newThickness);
+                                                }}
                                                 className="thickness-btn"
                                                 title="Decrease thickness"
                                             >
@@ -754,7 +700,11 @@ const ARVideoConsultation = ({
                                             </button>
                                             <span className="thickness-value">{lineThickness}</span>
                                             <button 
-                                                onClick={() => setLineThickness(Math.min(10, lineThickness + 1))}
+                                                onClick={() => {
+                                                    const newThickness = Math.min(10, lineThickness + 1);
+                                                    setLineThickness(newThickness);
+                                                    console.log('📏 Thickness:', newThickness);
+                                                }}
                                                 className="thickness-btn"
                                                 title="Increase thickness"
                                             >
@@ -764,17 +714,47 @@ const ARVideoConsultation = ({
                                         
                                         <div className="tool-separator"></div>
                                         
+                                        {/* Undo Button */}
+                                        <button 
+                                            className="undo-btn"
+                                            onClick={undoLastAnnotation}
+                                            disabled={annotations.length === 0}
+                                            title="Undo last drawing"
+                                            style={{
+                                                background: annotations.length > 0 
+                                                    ? 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)'
+                                                    : 'rgba(255, 255, 255, 0.1)',
+                                                opacity: annotations.length > 0 ? 1 : 0.5
+                                            }}
+                                        >
+                                            ↩️
+                                        </button>
+                                        
                                         {/* Clear Button */}
                                         <button 
                                             className="clear-btn"
                                             onClick={clearAllAnnotations}
-                                            title="Clear all annotations"
+                                            disabled={annotations.length === 0}
+                                            title="Clear all drawings"
+                                            style={{
+                                                opacity: annotations.length > 0 ? 1 : 0.5
+                                            }}
                                         >
                                             🗑️
                                         </button>
                                     </>
                                 )}
                             </div>
+                            
+                            {/* Drawing Status */}
+                            {drawingMode && (
+                                <div className="drawing-status">
+                                    <span>✏️ Drawing Mode</span>
+                                    <span>🎨 {currentColor}</span>
+                                    <span>📏 {lineThickness}px</span>
+                                    {annotations.length > 0 && <span>📝 {annotations.length} drawings</span>}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

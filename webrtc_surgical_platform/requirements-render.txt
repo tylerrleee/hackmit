@@ -1,0 +1,24 @@
+# Render Deployment Requirements
+# Minimal dependencies for WebRTC Surgical Platform deployment
+
+# Core WebRTC Platform Requirements
+numpy>=1.24.0,<2.0
+opencv-python>=4.8.0
+websockets>=11.0.0
+requests>=2.31.0
+
+# Python bridge and AR system essentials
+python-dotenv>=1.0.0
+pillow>=10.0.0
+
+# Development and testing (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Async support
+asyncio-throttle>=1.0.0
+aiohttp>=3.8.5
+
+# Note: open3d removed for Render compatibility
+# open3d is not available on all Linux architectures used by Render
+# The system will gracefully degrade without advanced 3D features

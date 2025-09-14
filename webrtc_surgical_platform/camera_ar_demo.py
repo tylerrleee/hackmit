@@ -48,6 +48,12 @@ class MedicalARCamera:
         self.surgeon_connected = False
         self.video_call_active = False
         
+        # Drawing state
+        self.drawing_mode = False
+        self.current_drawing_path = []
+        self.is_drawing = False
+        self.drawing_color = (0, 255, 0)  # Green
+        
     async def connect_to_bridge(self):
         """Connect to the WebRTC-AR bridge"""
         try:
@@ -256,6 +262,66 @@ class MedicalARCamera:
         
         self.annotations.append(text_annotation)
     
+    def mouse_callback(self, event, x, y, flags, param):
+        """Handle mouse events for drawing"""
+        if not self.drawing_mode:
+            return
+            
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # Start drawing
+            self.is_drawing = True
+            self.current_drawing_path = [(x, y)]
+            print(f"🖊️ Started drawing at ({x}, {y})")
+            
+        elif event == cv2.EVENT_MOUSEMOVE and self.is_drawing:
+            # Continue drawing
+            self.current_drawing_path.append((x, y))
+            
+        elif event == cv2.EVENT_LBUTTONUP and self.is_drawing:
+            # Finish drawing
+            self.is_drawing = False
+            if len(self.current_drawing_path) > 1:
+                # Create drawing annotation
+                drawing_annotation = {
+                    "type": "drawing",
+                    "path": self.current_drawing_path.copy(),
+                    "color": self.drawing_color,
+                    "thickness": 3,
+                    "timestamp": time.time()
+                }
+                self.annotations.append(drawing_annotation)
+                print(f"✅ Drawing completed with {len(self.current_drawing_path)} points")
+                
+                # Send to bridge if connected
+                if self.websocket and self.is_connected:
+                    asyncio.create_task(self.send_drawing_to_bridge(drawing_annotation))
+                    
+            self.current_drawing_path = []
+    
+    async def send_drawing_to_bridge(self, drawing_annotation):
+        """Send drawing annotation to the WebRTC bridge"""
+        try:
+            message = {
+                "type": "annotation",
+                "roomId": self.room_id,
+                "annotation": {
+                    "type": "draw",
+                    "data": {
+                        "points": [{"x": p[0]/self.camera_width, "y": p[1]/self.camera_height} 
+                                 for p in drawing_annotation["path"]],
+                        "color": "#00FF00",  # Green
+                        "thickness": drawing_annotation["thickness"]
+                    },
+                    "timestamp": drawing_annotation["timestamp"],
+                    "source": "field_medic"
+                },
+                "timestamp": time.time()
+            }
+            await self.websocket.send(json.dumps(message))
+            print("📡 Drawing sent to bridge")
+        except Exception as e:
+            print(f"❌ Failed to send drawing: {e}")
+    
     def render_annotations(self, frame: np.ndarray) -> np.ndarray:
         """Render AR annotations on the frame"""
         for annotation in self.annotations:
@@ -266,8 +332,14 @@ class MedicalARCamera:
                     self.draw_circle(frame, annotation)
                 elif annotation["type"] == "text":
                     self.draw_text(frame, annotation)
+                elif annotation["type"] == "drawing":
+                    self.draw_path(frame, annotation)
             except Exception as e:
                 logger.error(f"Error rendering annotation: {e}")
+        
+        # Draw current path being drawn
+        if self.is_drawing and len(self.current_drawing_path) > 1:
+            self.draw_current_path(frame)
         
         return frame
     
@@ -307,6 +379,35 @@ class MedicalARCamera:
         cv2.putText(frame, text, position, cv2.FONT_HERSHEY_SIMPLEX, 
                    font_scale, color, thickness)
     
+    def draw_path(self, frame: np.ndarray, annotation: Dict):
+        """Draw path/drawing annotation"""
+        path = annotation["path"]
+        color = annotation["color"]
+        thickness = annotation.get("thickness", 3)
+        
+        if len(path) < 2:
+            return
+            
+        # Draw lines connecting all points in the path
+        for i in range(1, len(path)):
+            pt1 = path[i-1]
+            pt2 = path[i]
+            cv2.line(frame, pt1, pt2, color, thickness)
+    
+    def draw_current_path(self, frame: np.ndarray):
+        """Draw the path currently being drawn (preview)"""
+        if len(self.current_drawing_path) < 2:
+            return
+            
+        # Draw with semi-transparent green
+        color = (0, 255, 0)  # Green
+        thickness = 3
+        
+        for i in range(1, len(self.current_drawing_path)):
+            pt1 = self.current_drawing_path[i-1]
+            pt2 = self.current_drawing_path[i]
+            cv2.line(frame, pt1, pt2, color, thickness)
+    
     def add_ui_overlay(self, frame: np.ndarray) -> np.ndarray:
         """Add UI elements to the frame"""
         # Status indicators
@@ -335,6 +436,14 @@ class MedicalARCamera:
         # Frame counter
         cv2.putText(frame, f"Frame: {self.frame_count}", (width - 150, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        # Drawing mode indicator
+        if self.drawing_mode:
+            cv2.putText(frame, "✏️ DRAWING MODE", (10, 120), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            if self.is_drawing:
+                cv2.putText(frame, "Drawing...", (10, 150), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         
         return frame
     
@@ -369,6 +478,10 @@ class MedicalARCamera:
             return
         
         logger.info("🎬 Starting camera loop...")
+        
+        # Set up mouse callback for drawing
+        cv2.namedWindow('Medical AR - Field Medic Camera')
+        cv2.setMouseCallback('Medical AR - Field Medic Camera', self.mouse_callback)
         
         try:
             while True:
@@ -405,6 +518,14 @@ class MedicalARCamera:
                     # Toggle streaming
                     self.is_streaming = not self.is_streaming
                     logger.info(f"Streaming: {'ON' if self.is_streaming else 'OFF'}")
+                elif key == ord('d'):
+                    # Toggle drawing mode
+                    self.drawing_mode = not self.drawing_mode
+                    logger.info(f"Drawing mode: {'ON' if self.drawing_mode else 'OFF'}")
+                    if not self.drawing_mode:
+                        # Stop any current drawing
+                        self.is_drawing = False
+                        self.current_drawing_path = []
                 
                 # Control frame rate
                 await asyncio.sleep(1.0 / self.fps)
@@ -448,6 +569,8 @@ async def main():
     print("  Q - Quit")
     print("  C - Clear annotations")
     print("  S - Toggle streaming")
+    print("  D - Toggle drawing mode")
+    print("  Mouse - Click and drag to draw (when drawing mode is ON)")
     print("=" * 50)
     
     # Create AR camera system
