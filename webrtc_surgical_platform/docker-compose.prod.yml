@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # Backend API Server - Production Configuration
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: surgical-platform-backend-prod
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # Use MongoDB Atlas in production
+      MONGODB_URI: ${MONGODB_ATLAS_URI}
+      # Use Redis Cloud or external Redis
+      REDIS_URL: ${REDIS_CLOUD_URL}
+      JWT_SECRET: ${JWT_SECRET_PRODUCTION}
+      JWT_EXPIRY: 24h
+      BCRYPT_ROUNDS: 12
+      # Production STUN/TURN servers
+      STUN_SERVER: ${STUN_SERVER_URL}
+      TURN_SERVER: ${TURN_SERVER_URL}
+      TURN_USERNAME: ${TURN_USERNAME}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL}
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+      SESSION_SECRET: ${SESSION_SECRET_PRODUCTION}
+      CORS_ORIGIN: ${FRONTEND_URL}
+      LOG_LEVEL: info
+      HIPAA_AUDIT_ENABLED: true
+      DATA_RETENTION_DAYS: 2555
+      MATCHING_ALGORITHM: hybrid
+      RECOMMENDATION_THRESHOLD: 0.7
+      EXPERT_CACHE_TTL: 3600
+      # Production encryption
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY_PRODUCTION}
+      # AWS S3 for file storage
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+    networks:
+      - surgical_network_prod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # WebRTC-AR Bridge Service - Production
+  webrtc_bridge:
+    build:
+      context: ./webrtc_bridge
+      dockerfile: Dockerfile
+    container_name: surgical-platform-bridge-prod
+    restart: unless-stopped
+    ports:
+      - "8765:8765"  # WebSocket for AR clients
+      - "8766:8766"  # HTTP API for backend communication
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
+    networks:
+      - surgical_network_prod
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import websockets; print('Bridge healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend (React + nginx) - Production
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: surgical-platform-frontend-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"  # For SSL termination
+    environment:
+      REACT_APP_API_URL: ${BACKEND_API_URL}
+      REACT_APP_WEBSOCKET_URL: ${WEBSOCKET_BRIDGE_URL}
+      NODE_ENV: production
+    networks:
+      - surgical_network_prod
+    depends_on:
+      backend:
+        condition: service_healthy
+      webrtc_bridge:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  surgical_network_prod:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

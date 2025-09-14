@@ -1,0 +1,78 @@
+services:
+  # Backend API Service
+  - type: web
+    name: surgical-platform-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: starter
+    region: ohio
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: MONGODB_URI
+        sync: false  # Set manually with your MongoDB Atlas connection string
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://surgical-platform-frontend.onrender.com
+      - key: STUN_SERVER_URL
+        value: stun:stun.relay.metered.ca:80
+      - key: TURN_SERVER_URL
+        value: turn:a.relay.metered.ca:80
+      - key: TURN_USERNAME
+        sync: false  # Set manually with your Metered.ca username
+      - key: TURN_CREDENTIAL
+        sync: false  # Set manually with your Metered.ca password
+      - key: HIPAA_AUDIT_ENABLED
+        value: true
+      - key: DATA_RETENTION_DAYS
+        value: 2555
+      - key: LOG_LEVEL
+        value: info
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 100
+      - key: MATCHING_ALGORITHM
+        value: hybrid
+      - key: RECOMMENDATION_THRESHOLD
+        value: 0.7
+      - key: EXPERT_CACHE_TTL
+        value: 3600
+
+  # Frontend Web Service
+  - type: web
+    name: surgical-platform-frontend
+    env: docker
+    dockerfilePath: ./frontend/Dockerfile
+    plan: starter
+    region: ohio
+    healthCheckPath: /health
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://surgical-platform-backend.onrender.com
+      - key: REACT_APP_WEBSOCKET_URL
+        value: wss://surgical-platform-bridge.onrender.com
+      - key: NODE_ENV
+        value: production
+
+  # WebRTC Bridge Service
+  - type: web
+    name: surgical-platform-bridge
+    env: docker
+    dockerfilePath: ./webrtc_bridge/Dockerfile
+    plan: starter
+    region: ohio
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONPATH
+        value: /app
+      - key: PYTHONUNBUFFERED
+        value: 1

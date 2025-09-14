@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7-jammy
+    container_name: surgical-platform-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: surgical_admin
+      MONGO_INITDB_ROOT_PASSWORD: secure_mongo_pass_2024
+      MONGO_INITDB_DATABASE: surgical_platform
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - surgical_network
+    healthcheck:
+      test: ["CMD","mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: surgical-platform-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - surgical_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: surgical-platform-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MONGODB_URI: mongodb://surgical_admin:secure_mongo_pass_2024@mongodb:27017/surgical_platform?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: surgical-platform-jwt-secret-key-production-2024
+      JWT_EXPIRY: 24h
+      BCRYPT_ROUNDS: 12
+      STUN_SERVER: stun:stun.l.google.com:19302
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+      SESSION_SECRET: surgical-session-secret-production-2024
+      CORS_ORIGIN: http://localhost:3000
+      LOG_LEVEL: info
+      HIPAA_AUDIT_ENABLED: true
+      DATA_RETENTION_DAYS: 2555
+      MATCHING_ALGORITHM: hybrid
+      RECOMMENDATION_THRESHOLD: 0.7
+      EXPERT_CACHE_TTL: 3600
+    volumes:
+      - backend_logs:/app/logs
+    networks:
+      - surgical_network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # WebRTC-AR Bridge Service
+  webrtc_bridge:
+    build:
+      context: ./webrtc_bridge
+      dockerfile: Dockerfile
+    container_name: surgical-platform-bridge
+    restart: unless-stopped
+    ports:
+      - "8765:8765"  # WebSocket for AR clients
+      - "8766:8766"  # HTTP API for backend communication
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
+    networks:
+      - surgical_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import websockets; print('Bridge healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend (React + nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: surgical-platform-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      REACT_APP_API_URL: http://localhost:3001
+      REACT_APP_WEBSOCKET_URL: ws://localhost:8765
+      NODE_ENV: production
+    networks:
+      - surgical_network
+    depends_on:
+      backend:
+        condition: service_healthy
+      webrtc_bridge:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+networks:
+  surgical_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
