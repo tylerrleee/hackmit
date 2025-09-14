@@ -1,0 +1,3 @@
+# Railway/Heroku Procfile for multi-service deployment
+web: cd backend && npm start
+bridge: python webrtc_bridge.py --port=$PORT

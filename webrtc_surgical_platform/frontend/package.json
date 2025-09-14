@@ -39,10 +39,18 @@
     "start": "react-scripts start",
     "build": "react-scripts build && npm run build-sw",
     "build-sw": "workbox generateSW workbox-config.js",
+    "build:vercel": "CI=true GENERATE_SOURCEMAP=false react-scripts build",
+    "build:railway": "REACT_APP_DEPLOYMENT_TARGET=railway react-scripts build",
+    "build:render": "REACT_APP_DEPLOYMENT_TARGET=render react-scripts build",
+    "build:local": "REACT_APP_DEPLOYMENT_TARGET=local react-scripts build",
+    "vercel-build": "npm run build:vercel",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "lint": "eslint src/",
-    "analyze": "npm run build && npx bundle-analyzer build/static/js/*.js"
+    "lint:fix": "eslint src/ --fix",
+    "analyze": "npm run build && npx bundle-analyzer build/static/js/*.js",
+    "serve": "serve -s build -l 3000",
+    "health-check": "node scripts/health-check.js"
   },
   "eslintConfig": {
     "extends": [
@@ -68,6 +76,7 @@
     "@testing-library/user-event": "^14.4.3",
     "react-scripts": "5.0.1",
     "workbox-cli": "^7.0.0",
-    "webpack-bundle-analyzer": "^4.9.0"
+    "webpack-bundle-analyzer": "^4.9.0",
+    "serve": "^14.2.0"
   }
 }

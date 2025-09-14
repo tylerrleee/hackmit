@@ -1,0 +1,9 @@
+version: 2
+region: us
+tunnels:
+  backend:
+    proto: http
+    addr: 3001
+  frontend:
+    proto: http
+    addr: 3000

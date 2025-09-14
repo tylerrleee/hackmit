@@ -1,0 +1,54 @@
+# Render.com Backend Service Configuration
+services:
+  - type: web
+    name: webrtc-surgical-backend
+    env: node
+    plan: starter
+    buildCommand: cd backend && npm ci --only=production
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: CORS_ORIGIN
+        value: https://webrtc-surgical-platform.vercel.app
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        fromDatabase:
+          name: surgical-platform-mongodb
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: surgical-platform-redis
+          property: connectionString
+    healthCheckPath: /api/health
+
+  - type: web
+    name: webrtc-surgical-bridge
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python webrtc_bridge.py --port=$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: WS_PORT
+        value: 8765
+      - key: HTTP_PORT
+        value: 8766
+      - key: WEBRTC_BACKEND_URL
+        fromService:
+          type: web
+          name: webrtc-surgical-backend
+          property: host
+
+databases:
+  - name: surgical-platform-mongodb
+    databaseName: surgical_platform
+    user: surgical_platform_user
+
+  - name: surgical-platform-redis
+    plan: starter

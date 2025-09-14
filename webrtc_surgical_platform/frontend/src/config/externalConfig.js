@@ -1,7 +1,12 @@
 /**
- * Frontend External Configuration Manager
+ * Frontend External Configuration Manager (Legacy)
  * Handles dynamic API URLs for local vs external (Ngrok) deployments
+ * 
+ * @deprecated Use deploymentConfig.js for new implementations
+ * This class is maintained for backward compatibility with existing components
  */
+
+import deploymentConfig from './deploymentConfig';
 
 class FrontendExternalConfig {
     constructor() {
@@ -98,11 +103,18 @@ class FrontendExternalConfig {
     }
 
     getApiUrl() {
-        return this.config.currentApiUrl;
+        // Fallback to new deployment config for better compatibility
+        return this.config.currentApiUrl || deploymentConfig.getApiUrl();
     }
 
     getWebSocketUrl() {
-        return this.config.currentWebsocketUrl;
+        // Fallback to new deployment config for better compatibility  
+        return this.config.currentWebsocketUrl || deploymentConfig.getWsUrl();
+    }
+
+    getArBridgeUrl() {
+        // New method for AR bridge URL support
+        return deploymentConfig.getArBridgeUrl();
     }
 
     isExternalMode() {

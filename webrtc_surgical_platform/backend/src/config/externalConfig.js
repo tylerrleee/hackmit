@@ -81,23 +81,67 @@ class ExternalConfigManager {
     }
 
     buildCorsOrigins() {
-        const origins = [
-            process.env.CORS_ORIGIN || 'http://localhost:3000'
-        ];
+        const origins = [];
+
+        // Base CORS origins
+        const baseOrigins = process.env.CORS_ORIGIN ? 
+            process.env.CORS_ORIGIN.split(',').map(o => o.trim()) : 
+            ['http://localhost:3000'];
+        
+        origins.push(...baseOrigins);
 
         // Add external URL if available
         if (process.env.FRONTEND_EXTERNAL_URL) {
             origins.push(process.env.FRONTEND_EXTERNAL_URL);
         }
 
-        // Add common development origins
+        // Add deployment-specific origins
+        const deploymentTarget = process.env.REACT_APP_DEPLOYMENT_TARGET || 
+                                process.env.DEPLOYMENT_TARGET || 
+                                'local';
+
+        switch (deploymentTarget) {
+            case 'vercel':
+                origins.push('https://*.vercel.app');
+                origins.push('https://webrtc-surgical-platform.vercel.app');
+                break;
+            
+            case 'railway':
+                origins.push('https://*.railway.app');
+                break;
+                
+            case 'render':
+                origins.push('https://*.onrender.com');
+                break;
+                
+            case 'ngrok':
+            case 'external':
+                origins.push('https://*.ngrok-free.app');
+                origins.push('https://*.ngrok.io');
+                origins.push('https://*.ngrok.app');
+                break;
+        }
+
+        // Add development origins
+        if (this.config?.nodeEnv === 'development') {
+            origins.push('http://localhost:3000');
+            origins.push('http://localhost:3001');
+            origins.push('http://127.0.0.1:3000');
+            origins.push('http://127.0.0.1:3001');
+        }
+
+        // Add external mode origins
         if (this.config?.externalMode) {
             origins.push('https://*.ngrok-free.app');
             origins.push('https://*.ngrok.io');
             origins.push('https://*.ngrok.app');
         }
 
-        return origins;
+        // Remove duplicates and return unique origins
+        const uniqueOrigins = [...new Set(origins)];
+        console.log('🔧 CORS Origins configured:', uniqueOrigins);
+        
+        return uniqueOrigins;
     }
 
     updateExternalUrls(urls) {

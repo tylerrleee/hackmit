@@ -1,0 +1,32 @@
+t=2025-09-14T06:51:21-0400 lvl=info msg="no configuration paths supplied"
+t=2025-09-14T06:51:21-0400 lvl=info msg="using configuration at default config path" path="/Users/tienle/Library/Application Support/ngrok/ngrok.yml"
+t=2025-09-14T06:51:21-0400 lvl=info msg="open config file" path="/Users/tienle/Library/Application Support/ngrok/ngrok.yml" err=nil
+t=2025-09-14T06:51:21-0400 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2025-09-14T06:51:21-0400 lvl=info msg="client session established" obj=tunnels.session
+t=2025-09-14T06:51:21-0400 lvl=info msg="tunnel session started" obj=tunnels.session
+t=2025-09-14T06:51:21-0400 lvl=info msg="started tunnel" obj=tunnels name=command_line addr=http://localhost:3001 url=https://e7805d656042.ngrok-free.app
+t=2025-09-14T06:51:36-0400 lvl=info msg=start pg=/api/tunnels id=57d79ece5de7848e
+t=2025-09-14T06:51:36-0400 lvl=info msg=end pg=/api/tunnels id=57d79ece5de7848e status=200 dur=396.041µs
+t=2025-09-14T06:51:36-0400 lvl=info msg="join connections" obj=join id=400e73c11798 l=[::1]:3001 r=192.54.222.144:15313
+t=2025-09-14T06:51:51-0400 lvl=info msg=start pg=/api/tunnels id=fe5d1af184cbabf6
+t=2025-09-14T06:51:51-0400 lvl=info msg=end pg=/api/tunnels id=fe5d1af184cbabf6 status=200 dur=424.458µs
+t=2025-09-14T06:51:53-0400 lvl=info msg=start pg=/api/tunnels id=eccebec0d85298d7
+t=2025-09-14T06:51:53-0400 lvl=info msg=end pg=/api/tunnels id=eccebec0d85298d7 status=200 dur=151.25µs
+t=2025-09-14T06:51:55-0400 lvl=info msg=start pg=/api/tunnels id=5ebfa6dc92d128d3
+t=2025-09-14T06:51:55-0400 lvl=info msg=end pg=/api/tunnels id=5ebfa6dc92d128d3 status=200 dur=882.083µs
+t=2025-09-14T06:51:57-0400 lvl=info msg=start pg=/api/tunnels id=08ba7301a112122e
+t=2025-09-14T06:51:57-0400 lvl=info msg=end pg=/api/tunnels id=08ba7301a112122e status=200 dur=168.333µs
+t=2025-09-14T06:51:59-0400 lvl=info msg=start pg=/api/tunnels id=040f0afa22494a45
+t=2025-09-14T06:51:59-0400 lvl=info msg=end pg=/api/tunnels id=040f0afa22494a45 status=200 dur=150.167µs
+t=2025-09-14T06:52:01-0400 lvl=info msg=start pg=/api/tunnels id=876dd5e391c28171
+t=2025-09-14T06:52:01-0400 lvl=info msg=end pg=/api/tunnels id=876dd5e391c28171 status=200 dur=398.667µs
+t=2025-09-14T06:52:04-0400 lvl=info msg=start pg=/api/tunnels id=01197bb033af6be7
+t=2025-09-14T06:52:04-0400 lvl=info msg=end pg=/api/tunnels id=01197bb033af6be7 status=200 dur=154.792µs
+t=2025-09-14T06:52:06-0400 lvl=info msg=start pg=/api/tunnels id=909545843338e488
+t=2025-09-14T06:52:06-0400 lvl=info msg=end pg=/api/tunnels id=909545843338e488 status=200 dur=129.125µs
+t=2025-09-14T06:52:08-0400 lvl=info msg=start pg=/api/tunnels id=d9dca2a7ff6c848e
+t=2025-09-14T06:52:08-0400 lvl=info msg=end pg=/api/tunnels id=d9dca2a7ff6c848e status=200 dur=268.25µs
+t=2025-09-14T06:52:10-0400 lvl=info msg=start pg=/api/tunnels id=9aeddba52d032391
+t=2025-09-14T06:52:10-0400 lvl=info msg=end pg=/api/tunnels id=9aeddba52d032391 status=200 dur=192.417µs
+t=2025-09-14T06:52:12-0400 lvl=info msg=start pg=/api/tunnels id=47d867abbe9aefc9
+t=2025-09-14T06:52:12-0400 lvl=info msg=end pg=/api/tunnels id=47d867abbe9aefc9 status=200 dur=126.458µs

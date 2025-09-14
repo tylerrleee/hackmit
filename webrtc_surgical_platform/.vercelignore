@@ -1,0 +1,62 @@
+# Backend files and services (not deployed to Vercel)
+backend/
+*.py
+__pycache__/
+*.pyc
+*.pid
+
+# Development and configuration files
+node_modules/
+.env*
+!.env.example
+*.log
+logs/
+
+# Build artifacts that should be regenerated
+build/
+dist/
+.next/
+
+# Development tools
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker files
+docker-compose*.yml
+Dockerfile*
+
+# Scripts and utilities
+*.sh
+!vercel-build.sh
+
+# Documentation (keep minimal)
+DEPLOYMENT.md
+RENDER_DEPLOYMENT.md
+MONGODB_ATLAS_SETUP.md
+MULTI-LOCATION-SETUP.md
+
+# Test files
+test_*
+*test.py
+*.test.js
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Ngrok configuration
+ngrok*.yml
+ngrok*.log

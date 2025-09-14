@@ -75,26 +75,50 @@ class SurgicalPlatformServer {
             }
         }));
 
-        // Dynamic CORS configuration
+        // Dynamic CORS configuration with enhanced validation
         this.app.use(cors({
             origin: (origin, callback) => {
-                // Allow requests from configured origins or no origin (mobile apps, curl, etc)
-                if (!origin || this.config.corsOrigins.some(allowedOrigin => {
+                // Allow requests with no origin (mobile apps, curl, etc.) in development
+                if (!origin && this.config.nodeEnv === 'development') {
+                    return callback(null, true);
+                }
+
+                // Strict validation for production
+                if (!origin && this.config.nodeEnv === 'production') {
+                    return callback(new Error('Origin header required in production'), false);
+                }
+
+                // Check against configured origins
+                const isAllowed = this.config.corsOrigins.some(allowedOrigin => {
                     if (allowedOrigin.includes('*')) {
-                        const pattern = allowedOrigin.replace('*', '.*');
-                        return new RegExp(pattern).test(origin);
+                        const pattern = allowedOrigin.replace(/\*/g, '[^/]*').replace(/\./g, '\\.');
+                        return new RegExp(`^https?://${pattern}$`).test(origin);
                     }
                     return allowedOrigin === origin;
-                })) {
+                });
+
+                if (isAllowed) {
                     callback(null, true);
                 } else {
-                    callback(new Error('Not allowed by CORS'));
+                    this.logger.warn('CORS rejected origin:', { origin, allowed: this.config.corsOrigins });
+                    callback(new Error(`Origin ${origin} not allowed by CORS policy`), false);
                 }
             },
             credentials: true,
             optionsSuccessStatus: 200,
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+            allowedHeaders: [
+                "Content-Type", 
+                "Authorization", 
+                "X-Requested-With", 
+                "X-Deployment-Target",
+                "X-API-Version"
+            ],
+            exposedHeaders: [
+                "X-Total-Count",
+                "X-Rate-Limit-Remaining",
+                "X-Deployment-Target"
+            ]
         }));
 
         // Rate limiting
