@@ -629,10 +629,10 @@ const ARVideoConsultation = ({
                 <h2>🏥 AR Video Consultation</h2>
                 <div className="status-indicators">
                     <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
-                        {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+                        {isConnected ? '🟢' : '🔴 '}
                     </span>
                     <span className={`status-indicator ${bridgeConnected ? 'connected' : 'disconnected'}`}>
-                        {bridgeConnected ? '🔗 Bridge Connected' : '🔗 Bridge Offline'}
+                        {bridgeConnected ? '🔗' : '🔗 '}
                     </span>
                     <span className="participant-count">
                         👥 {participants.size + 1} participants
