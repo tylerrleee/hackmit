@@ -267,6 +267,7 @@ const RoomVideoConsultation = ({
                         <ARVideoConsultation
                             roomId={roomId}
                             userToken={userToken}
+                            user={user}
                             userRole={user.role}
                             onError={(error) => setRoomError(error)}
                             onConnectionChange={handleConnectionChange}

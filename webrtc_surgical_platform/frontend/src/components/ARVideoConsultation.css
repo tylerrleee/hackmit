@@ -487,6 +487,33 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Keyboard shortcuts indicator */
+.keyboard-shortcuts {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: 20;
+}
+
+.keyboard-shortcuts kbd {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 0.9em;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
 /* Responsive design */
 @media (max-width: 1200px) {
   .video-annotation-container {
@@ -692,6 +719,67 @@
     font-size: 0.8em;
     text-transform: capitalize;
     margin-right: 10px;
+}
+
+/* Fullscreen Styles */
+.ar-video-consultation.fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 9999 !important;
+    background: black !important;
+}
+
+.ar-video-consultation.fullscreen .video-annotation-container {
+    height: calc(100vh - 120px) !important;
+    padding: 10px !important;
+}
+
+.ar-video-consultation.fullscreen .video-wrapper {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.ar-video-consultation.fullscreen .consultation-video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+}
+
+.ar-video-consultation.fullscreen .annotation-canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.ar-video-consultation.fullscreen .consultation-header {
+    background: rgba(0, 0, 0, 0.8) !important;
+    padding: 10px 20px !important;
+}
+
+.ar-video-consultation.fullscreen .video-controls {
+    background: rgba(0, 0, 0, 0.9) !important;
+    padding: 10px 20px !important;
+}
+
+.ar-video-consultation.fullscreen .floating-drawing-tools {
+    z-index: 10000 !important;
+}
+
+.ar-video-consultation.fullscreen .remote-videos-pip {
+    position: fixed !important;
+    top: 80px !important;
+    right: 20px !important;
+    z-index: 10000 !important;
+}
+
+.fullscreen-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+}
+
+.fullscreen-btn:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%) !important;
 }
 
 /* Video Stream Status Indicators */

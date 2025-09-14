@@ -32,12 +32,16 @@ const ARVideoConsultation = ({
     // Bridge connection state
     const [bridgeConnected, setBridgeConnected] = useState(false);
     
+    // Fullscreen state
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    
     // Refs
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const webrtcServiceRef = useRef(null);
     const remoteVideoRefs = useRef(new Map());
     const bridgeSocketRef = useRef(null);
+    const containerRef = useRef(null);
     
     // Simple drawing colors
     const drawingColors = ['#00FF00', '#FF0000', '#0000FF', '#FFFF00'];
@@ -549,6 +553,66 @@ const ARVideoConsultation = ({
         });
     };
     
+    // Fullscreen functionality
+    const toggleFullscreen = useCallback(async () => {
+        if (!containerRef.current) return;
+        
+        try {
+            if (!isFullscreen) {
+                // Enter fullscreen
+                if (containerRef.current.requestFullscreen) {
+                    await containerRef.current.requestFullscreen();
+                } else if (containerRef.current.webkitRequestFullscreen) {
+                    await containerRef.current.webkitRequestFullscreen();
+                } else if (containerRef.current.mozRequestFullScreen) {
+                    await containerRef.current.mozRequestFullScreen();
+                } else if (containerRef.current.msRequestFullscreen) {
+                    await containerRef.current.msRequestFullscreen();
+                }
+                setIsFullscreen(true);
+                console.log('🔍 Entered fullscreen mode');
+            } else {
+                // Exit fullscreen
+                if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    await document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    await document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                    await document.msExitFullscreen();
+                }
+                setIsFullscreen(false);
+                console.log('🔍 Exited fullscreen mode');
+            }
+        } catch (error) {
+            console.error('Fullscreen error:', error);
+        }
+    }, [isFullscreen]);
+
+    // Handle keyboard shortcuts
+    const handleKeyDown = useCallback((event) => {
+        if (event.key === 'f' || event.key === 'F') {
+            event.preventDefault();
+            toggleFullscreen();
+        } else if (event.key === 'Escape') {
+            if (isFullscreen) {
+                setIsFullscreen(false);
+            }
+        }
+    }, [isFullscreen, toggleFullscreen]);
+
+    // Listen for fullscreen change events
+    const handleFullscreenChange = useCallback(() => {
+        const isCurrentlyFullscreen = !!(
+            document.fullscreenElement ||
+            document.webkitFullscreenElement ||
+            document.mozFullScreenElement ||
+            document.msFullscreenElement
+        );
+        setIsFullscreen(isCurrentlyFullscreen);
+    }, []);
+
     // WebRTC peer connections are handled by the centralized WebRTC service
     
     // Initialize component
@@ -572,9 +636,29 @@ const ARVideoConsultation = ({
             }
         };
     }, [roomId, userToken]);
+
+    // Setup keyboard and fullscreen event listeners
+    useEffect(() => {
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+        };
+    }, [handleKeyDown, handleFullscreenChange]);
     
     return (
-        <div className={'ar-video-consultation'}>
+        <div 
+            ref={containerRef}
+            className={`ar-video-consultation ${isFullscreen ? 'fullscreen' : ''}`}
+        >
             {/* Header */}
             <div className="consultation-header">
                 <h2>🏥 AR Video Consultation</h2>
@@ -647,8 +731,8 @@ const ARVideoConsultation = ({
                         </div>
                     )}
                     
-                    {/* Simplified Drawing Tools (only for doctors) */}
-                    {userRole === 'doctor' && (
+                    {/* Simplified Drawing Tools (for doctors and surgeons) */}
+                    {(userRole === 'doctor' || userRole === 'surgeon') && (
                         <div className="floating-drawing-tools">
                             <div className="drawing-toolbar">
                                 {/* Drawing Mode Toggle */}
@@ -776,6 +860,13 @@ const ARVideoConsultation = ({
                 >
                     {localAudioEnabled ? '🎤 Mic On' : '🎤 Mic Off'}
                 </button>
+                <button 
+                    onClick={toggleFullscreen}
+                    className="control-btn fullscreen-btn"
+                    title={isFullscreen ? 'Exit fullscreen (ESC)' : 'Enter fullscreen (F)'}
+                >
+                    {isFullscreen ? '🔍 Exit Fullscreen' : '🔍 Fullscreen'}
+                </button>
             </div>
 
             {/* Compact Remote Video Streams - Picture in Picture Style */}
@@ -811,6 +902,13 @@ const ARVideoConsultation = ({
             {annotations.length > 0 && (
                 <div className="annotation-info">
                     <span>📝 {annotations.length} annotations active</span>
+                </div>
+            )}
+
+            {/* Keyboard shortcuts indicator */}
+            {!isFullscreen && (
+                <div className="keyboard-shortcuts">
+                    <span>Press <kbd>F</kbd> for fullscreen</span>
                 </div>
             )}
         </div>
