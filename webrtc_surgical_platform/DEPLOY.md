@@ -29,13 +29,19 @@ Use: **`requirements-render.txt`** - Render-compatible dependencies
 
 ## 🚀 Render Deployment Instructions
 
-### Option 1: Use Render-Specific Requirements (Recommended)
+### Option 1: Use Production-Optimized Requirements (Recommended)
 ```bash
 # In Render build settings, set:
+Build Command: pip install -r requirements-deploy.txt && python -m pip install --upgrade pip
+```
+
+### Option 2: Fallback to Minimal Requirements
+```bash
+# If deployment still fails, use minimal requirements:
 Build Command: pip install -r requirements-render.txt && python -m pip install --upgrade pip
 ```
 
-### Option 2: Environment Variable Override
+### Option 3: Environment Variable Override
 ```bash
 # Set environment variable in Render:
 SKIP_OPTIONAL_DEPS=true
@@ -43,11 +49,27 @@ SKIP_OPTIONAL_DEPS=true
 # Modify requirements.txt to check this variable
 ```
 
-### Option 3: Multi-Requirements Installation
+### Option 4: Multi-Requirements Installation
 ```bash
 # Build command:
-pip install -r requirements-render.txt || pip install -r requirements-core.txt
+pip install -r requirements-deploy.txt || pip install -r requirements-render.txt || pip install -r requirements-core.txt
 ```
+
+## 🚨 **New Deployment Issues Fixed (September 2025)**
+
+### Additional Problems Identified:
+1. **Heavy ML Dependencies**: tensorflow (~500MB), torch (~800MB) causing build timeouts
+2. **Version Conflicts**: Multiple requirements files with conflicting package versions  
+3. **Development Dependencies**: pytest, black, flake8 included in production builds
+4. **OpenCV Issue**: Full opencv-python vs opencv-python-headless for servers
+
+### ✅ **New Solution: requirements-deploy.txt**
+Created optimized deployment file with:
+- **Removed heavy ML libraries** (tensorflow, torch, torchvision)
+- **Server-optimized OpenCV** (opencv-python-headless)
+- **Development dependencies removed** (pytest, black, flake8)
+- **Flexible version ranges** for better compatibility
+- **Essential services only** (WebRTC, WebSocket, Auth, Database)
 
 ## 🔧 What Works Without open3d
 

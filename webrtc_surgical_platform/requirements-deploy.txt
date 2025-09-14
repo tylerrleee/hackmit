@@ -1,0 +1,41 @@
+# WebRTC Surgical Platform - Production Deployment Requirements
+# Optimized for Render.com - Minimal dependencies for cloud deployment
+
+# Core Runtime Requirements
+numpy>=1.24.0,<2.0
+opencv-python-headless>=4.8.0  # Headless version for servers
+websockets>=11.0.0
+requests>=2.31.0
+aiohttp>=3.8.5
+asyncio-throttle>=1.0.0
+
+# Python utilities
+python-dotenv>=1.0.0
+pillow>=10.0.0
+
+# Web framework support
+fastapi>=0.100.0
+uvicorn>=0.20.0
+
+# Security and authentication
+cryptography>=41.0.0
+pyjwt>=2.8.0
+bcrypt>=4.0.0
+
+# JSON and data handling
+pydantic>=2.0.0
+
+# Async processing
+celery>=5.3.0  
+redis>=4.6.0
+
+# Database (if needed)
+pymongo>=4.5.0
+
+# Monitoring (lightweight)
+structlog>=23.1.0
+
+# Note: Removed heavy ML dependencies (tensorflow, torch) for cloud deployment
+# Note: Removed development dependencies (pytest, black, flake8)
+# Note: Using opencv-python-headless for server environments
+# Note: All versions are minimum compatible versions for flexibility

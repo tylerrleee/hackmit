@@ -4,7 +4,9 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const winston = require('winston');
-require('dotenv').config();
+
+// Load external configuration first
+const externalConfig = require('./config/externalConfig');
 
 const SignalingServer = require('./signaling/signalingServer');
 const AuthenticationService = require('./auth/authService');
@@ -14,15 +16,21 @@ const { rateLimiter } = require('./middleware/rateLimiter');
 
 class SurgicalPlatformServer {
     constructor() {
+        this.config = externalConfig.getConfig();
         this.app = express();
         this.server = http.createServer(this.app);
+        
+        // Dynamic Socket.IO configuration based on external config
         this.io = socketIo(this.server, {
             cors: {
-                origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-                methods: ["GET", "POST"],
-                credentials: true
+                origin: this.config.corsOrigins,
+                methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                credentials: true,
+                allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
             },
-            transports: ['websocket', 'polling']
+            transports: ['websocket', 'polling'],
+            pingTimeout: this.config.externalMode ? this.config.externalTimeout : 20000,
+            pingInterval: this.config.externalMode ? this.config.heartbeatInterval : 25000
         });
         
         this.setupLogger();
@@ -31,6 +39,7 @@ class SurgicalPlatformServer {
         this.setupRoutes();
         this.setupSignaling();
         this.setupErrorHandling();
+        this.logConfiguration();
     }
 
     setupLogger() {
@@ -66,10 +75,26 @@ class SurgicalPlatformServer {
             }
         }));
 
-        // CORS
+        // Dynamic CORS configuration
         this.app.use(cors({
-            origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-            credentials: true
+            origin: (origin, callback) => {
+                // Allow requests from configured origins or no origin (mobile apps, curl, etc)
+                if (!origin || this.config.corsOrigins.some(allowedOrigin => {
+                    if (allowedOrigin.includes('*')) {
+                        const pattern = allowedOrigin.replace('*', '.*');
+                        return new RegExp(pattern).test(origin);
+                    }
+                    return allowedOrigin === origin;
+                })) {
+                    callback(null, true);
+                } else {
+                    callback(new Error('Not allowed by CORS'));
+                }
+            },
+            credentials: true,
+            optionsSuccessStatus: 200,
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
         }));
 
         // Rate limiting
@@ -305,6 +330,33 @@ class SurgicalPlatformServer {
         });
     }
 
+    logConfiguration() {
+        const configInfo = externalConfig.getDisplayInfo();
+        this.logger.info('🔧 Server Configuration:', {
+            mode: configInfo.mode,
+            backend: configInfo.backend,
+            frontend: configInfo.frontend,
+            bridge: configInfo.bridge,
+            corsOrigins: configInfo.corsOrigins,
+            externalMode: this.config.externalMode
+        });
+
+        if (this.config.externalMode) {
+            this.logger.info('🌐 External mode enabled - ready for Ngrok tunnels');
+        }
+    }
+
+    // Method to update external URLs (called by Ngrok setup script)
+    updateExternalUrls(urls) {
+        externalConfig.updateExternalUrls(urls);
+        this.config = externalConfig.getConfig();
+        
+        // Update Socket.IO CORS if needed
+        this.io.engine.opts.cors.origin = this.config.corsOrigins;
+        
+        this.logger.info('🔄 External URLs updated dynamically');
+    }
+
     start() {
         const port = process.env.PORT || 3001;
         
@@ -319,10 +371,11 @@ class SurgicalPlatformServer {
     }
 }
 
+// Export the class for external use
+module.exports = SurgicalPlatformServer;
+
 // Start server if this file is run directly
 if (require.main === module) {
     const server = new SurgicalPlatformServer();
     server.start();
 }
-
-module.exports = SurgicalPlatformServer;

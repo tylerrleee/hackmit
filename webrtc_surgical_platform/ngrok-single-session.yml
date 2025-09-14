@@ -1,0 +1,42 @@
+# Ngrok Configuration - Single Session Multiple Tunnels
+# This works with free Ngrok accounts (1 session limit)
+
+version: 2
+
+# Global settings
+region: us
+web_addr: localhost:4040
+
+# Tunnels - all run in single session
+tunnels:
+  # Backend API Server
+  backend:
+    proto: http
+    addr: 3001
+    schemes: [https]
+    inspect: true
+    
+  # Frontend React App
+  frontend:
+    proto: http
+    addr: 3000  
+    schemes: [https]
+    inspect: true
+    
+  # WebRTC Bridge WebSocket
+  bridge:
+    proto: http
+    addr: 8765
+    schemes: [https]
+    inspect: true
+    
+  # Bridge HTTP API
+  bridge-http:
+    proto: http
+    addr: 8766
+    schemes: [https]
+    inspect: true
+
+# Logging
+log_level: info
+log_format: term

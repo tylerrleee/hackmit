@@ -1,0 +1,50 @@
+# Ngrok Configuration for WebRTC Surgical Platform
+# Multiple tunnel setup for backend, frontend, and WebRTC bridge
+
+version: 2
+
+# Authentication - you'll need to add your auth token
+authtoken: # Add your ngrok auth token here
+
+# Global configuration
+region: us
+web_addr: localhost:4040
+
+# Tunnels configuration
+tunnels:
+  # Backend API Server
+  backend:
+    proto: http
+    addr: 3001
+    hostname: # Will be auto-generated or can specify custom domain
+    bind_tls: true
+    inspect: true
+    
+  # WebRTC Bridge WebSocket
+  bridge:
+    proto: http
+    addr: 8765
+    hostname: # Will be auto-generated
+    bind_tls: true
+    inspect: true
+    
+  # Bridge HTTP API  
+  bridge-http:
+    proto: http
+    addr: 8766
+    hostname: # Will be auto-generated
+    bind_tls: true
+    inspect: true
+    
+  # Frontend (for production builds)
+  frontend:
+    proto: http
+    addr: 3000
+    hostname: # Will be auto-generated
+    bind_tls: true
+    inspect: true
+
+# Log configuration
+log_level: info
+log_format: json
+log: ./logs/ngrok.log

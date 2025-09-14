@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ARVideoConsultation from './ARVideoConsultation';
+import externalConfig from '../config/externalConfig';
 import './RoomVideoConsultation.css';
 
 const RoomVideoConsultation = ({ 
@@ -38,7 +39,7 @@ const RoomVideoConsultation = ({
             setIsLoading(true);
             
             // Fetch room information from backend
-            const response = await fetch(`http://localhost:3001/api/rooms/${roomId}`, {
+            const response = await fetch(`${externalConfig.getApiUrl()}/api/rooms/${roomId}`, {
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
@@ -89,7 +90,7 @@ const RoomVideoConsultation = ({
     const startFieldMedicConnection = async () => {
         try {
             // Send start video call command to bridge via backend API
-            const response = await fetch('http://localhost:3001/api/video-call/start', {
+            const response = await fetch(`${externalConfig.getApiUrl()}/api/video-call/start`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -124,7 +125,7 @@ const RoomVideoConsultation = ({
     const endFieldMedicConnection = async () => {
         try {
             // Send end video call command to bridge via backend API
-            const response = await fetch('http://localhost:3001/api/video-call/end', {
+            const response = await fetch(`${externalConfig.getApiUrl()}/api/video-call/end`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,

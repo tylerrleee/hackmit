@@ -1,0 +1,20 @@
+# Ultra-Minimal Requirements for WebRTC Surgical Platform
+# Use this if requirements-deploy.txt still fails
+
+# Absolute essentials only
+websockets>=11.0.0
+requests>=2.31.0
+aiohttp>=3.8.0
+python-dotenv>=1.0.0
+
+# Basic async support
+asyncio-throttle>=1.0.0
+
+# Minimal image processing (if opencv fails, remove this)
+# opencv-python-headless>=4.8.0
+
+# Basic utilities
+pillow>=10.0.0
+
+# Note: This removes numpy, opencv, and most other dependencies
+# The system will run in basic WebSocket mode only

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import RoomVideoConsultation from './components/RoomVideoConsultation';
+import externalConfig from './config/externalConfig';
 import './App.css';
-
-const API_BASE_URL = 'http://localhost:3001';
 
 function App() {
   const [backendStatus, setBackendStatus] = useState('checking');
@@ -28,7 +27,7 @@ function App() {
   useEffect(() => {
     if (token && !user) {
       // Verify token is still valid by making an authenticated request
-      axios.get(`${API_BASE_URL}/api/webrtc-config`, {
+      axios.get(`${externalConfig.getApiUrl()}/api/webrtc-config`, {
         headers: { Authorization: `Bearer ${token}` }
       }).then(() => {
         // Token is valid, but we need user info
@@ -43,7 +42,7 @@ function App() {
 
   const checkBackendHealth = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/health`);
+      const response = await axios.get(`${externalConfig.getApiUrl()}/health`);
       setBackendStatus('online');
       console.log('Backend health:', response.data);
     } catch (error) {
@@ -55,7 +54,7 @@ function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/auth/login`, loginData);
+      const response = await axios.post(`${externalConfig.getApiUrl()}/api/auth/login`, loginData);
       
       if (response.data.success) {
         setUser(response.data.user);
@@ -74,10 +73,10 @@ function App() {
   const loadSystemStats = async (authToken) => {
     try {
       const [webrtcConfig, aiHealth] = await Promise.all([
-        axios.get(`${API_BASE_URL}/api/webrtc-config`, {
+        axios.get(`${externalConfig.getApiUrl()}/api/webrtc-config`, {
           headers: { Authorization: `Bearer ${authToken}` }
         }),
-        axios.get(`${API_BASE_URL}/api/ai/health`, {
+        axios.get(`${externalConfig.getApiUrl()}/api/ai/health`, {
           headers: { Authorization: `Bearer ${authToken}` }
         })
       ]);
@@ -101,7 +100,7 @@ function App() {
 
   const testExpertMatching = async () => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/matching/find-experts`, {
+      const response = await axios.post(`${externalConfig.getApiUrl()}/api/matching/find-experts`, {
         patientInfo: {
           currentCondition: 'cardiac surgery consultation',
           severity: 'moderate'
@@ -123,7 +122,7 @@ function App() {
   const createRoom = async () => {
     try {
       setCreateRoomLoading(true);
-      const response = await axios.post(`${API_BASE_URL}/api/rooms/create`, {
+      const response = await axios.post(`${externalConfig.getApiUrl()}/api/rooms/create`, {
         roomType: 'ar-consultation',
         metadata: {
           medicalSpecialty: 'surgery',
@@ -151,7 +150,7 @@ function App() {
   const joinRoom = async (roomId) => {
     try {
       // Validate room exists and user has access
-      const response = await axios.get(`${API_BASE_URL}/api/rooms/${roomId}`, {
+      const response = await axios.get(`${externalConfig.getApiUrl()}/api/rooms/${roomId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -173,7 +172,7 @@ function App() {
 
   const loadAvailableRooms = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/rooms/user/rooms`, {
+      const response = await axios.get(`${externalConfig.getApiUrl()}/api/rooms/user/rooms`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

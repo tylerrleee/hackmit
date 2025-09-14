@@ -16,6 +16,9 @@ import time
 from aiohttp import web
 import aiohttp
 
+# Load external configuration first
+from external_config import external_config
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -151,7 +154,7 @@ class WebRTCARBridge:
             ping_timeout=10
         )
         
-        logger.info(f"AR WebSocket server started on ws://localhost:{self.ar_port}")
+        logger.info(f"AR WebSocket server started on port {self.ar_port}")
         return server
     
     async def setup_http_server(self):
@@ -365,8 +368,15 @@ class WebRTCARBridge:
         websocket_server = await self.start_ar_websocket_server()
         
         logger.info("🔄 Bridge service running - waiting for connections...")
-        logger.info(f"   AR clients can connect to: ws://localhost:{self.ar_port}")
-        logger.info(f"   HTTP API available at: http://localhost:{self.http_port}")
+        mode = external_config.get_display_info()['mode']
+        if external_config.is_external_mode():
+            logger.info(f"   AR clients can connect to: {external_config.get_bridge_websocket_url()}")
+            logger.info(f"   HTTP API available at: {external_config.get_bridge_http_url()}")
+            logger.info(f"   🌐 Running in {mode} mode - ready for Ngrok tunnels")
+        else:
+            logger.info(f"   AR clients can connect to: ws://localhost:{self.ar_port}")
+            logger.info(f"   HTTP API available at: http://localhost:{self.http_port}")
+            logger.info(f"   🏠 Running in {mode} mode")
         logger.info(f"   WebRTC platform at: {self.webrtc_url}")
         
         try:
@@ -381,11 +391,17 @@ class WebRTCARBridge:
 async def main():
     parser = argparse.ArgumentParser(description='WebRTC-AR Bridge Service')
     parser.add_argument('--room-id', help='Test room ID to connect to')
-    parser.add_argument('--webrtc-url', default='http://localhost:3001', help='WebRTC platform URL')
-    parser.add_argument('--ar-port', type=int, default=8765, help='AR WebSocket port')
-    parser.add_argument('--http-port', type=int, default=8766, help='HTTP API port')
+    parser.add_argument('--webrtc-url', default=external_config.get_webrtc_backend_url(), help='WebRTC platform URL')
+    parser.add_argument('--ar-port', type=int, default=external_config.get_config()['bridge_ws_port'], help='AR WebSocket port')
+    parser.add_argument('--http-port', type=int, default=external_config.get_config()['bridge_http_port'], help='HTTP API port')
     
     args = parser.parse_args()
+    
+    # Log external configuration info
+    logger.info("🔧 Bridge Service Configuration:")
+    config_info = external_config.get_display_info()
+    for key, value in config_info.items():
+        logger.info(f"   {key}: {value}")
     
     bridge = WebRTCARBridge(
         webrtc_url=args.webrtc_url,

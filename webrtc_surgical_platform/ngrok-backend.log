@@ -1,0 +1,14 @@
+t=2025-09-14T06:26:14-0400 lvl=info msg="no configuration paths supplied"
+t=2025-09-14T06:26:14-0400 lvl=info msg="using configuration at default config path" path="/Users/tienle/Library/Application Support/ngrok/ngrok.yml"
+t=2025-09-14T06:26:14-0400 lvl=info msg="open config file" path="/Users/tienle/Library/Application Support/ngrok/ngrok.yml" err=nil
+t=2025-09-14T06:26:15-0400 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2025-09-14T06:26:15-0400 lvl=info msg="client session established" obj=tunnels.session
+t=2025-09-14T06:26:15-0400 lvl=info msg="tunnel session started" obj=tunnels.session
+t=2025-09-14T06:26:15-0400 lvl=info msg="started tunnel" obj=tunnels name=backend addr=http://localhost:3001 url=https://30a518e01040.ngrok-free.app
+t=2025-09-14T06:26:25-0400 lvl=info msg=start pg=/api/tunnels id=672bde7d76710536
+t=2025-09-14T06:26:25-0400 lvl=info msg=end pg=/api/tunnels id=672bde7d76710536 status=200 dur=215.792µs
+t=2025-09-14T06:26:52-0400 lvl=info msg=start pg=/api/tunnels id=f7aed0452b6df65a
+t=2025-09-14T06:26:52-0400 lvl=info msg=end pg=/api/tunnels id=f7aed0452b6df65a status=200 dur=1.062542ms
+t=2025-09-14T06:29:21-0400 lvl=info msg="received stop request" obj=app stopReq="{err:<nil> restart:false}"
+t=2025-09-14T06:29:21-0400 lvl=info msg="session closing" obj=tunnels.session err=nil
+t=2025-09-14T06:29:21-0400 lvl=info msg="accept failed" obj=tunnels.session obj=csess id=f2a45b102dc7 err="reconnecting session closed"

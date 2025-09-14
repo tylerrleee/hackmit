@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WebRTCService from '../services/WebRTCService';
+import externalConfig from '../config/externalConfig';
 import './ARVideoConsultation.css';
 
 const ARVideoConsultation = ({ 
@@ -56,7 +57,7 @@ const ARVideoConsultation = ({
             setupWebRTCListeners();
             
             // Initialize and connect
-            await webrtcServiceRef.current.initialize('http://localhost:3001', userToken);
+            await webrtcServiceRef.current.initialize(externalConfig.getApiUrl(), userToken);
             
             // Join room
             await webrtcServiceRef.current.joinRoom(roomId, {
@@ -230,7 +231,7 @@ const ARVideoConsultation = ({
     // Connect to AR Bridge for annotation synchronization
     const connectToBridge = async () => {
         try {
-            const bridgeWs = new WebSocket('ws://localhost:8765');
+            const bridgeWs = new WebSocket(externalConfig.getWebSocketUrl());
             
             bridgeWs.onopen = () => {
                 console.log('🔗 Connected to AR Bridge');
